@@ -1,0 +1,37 @@
+# video-journal-agent — production compose.
+#
+# Brings up the bot + scheduler + read-only dashboard in one container.
+# Configuration comes from `.env` (copy `.env.example` and fill it in).
+#
+#   docker compose up -d --build
+#
+# The reasoning layer is the Claude Code CLI. It must be installed and logged in
+# on the host (subscription `claude /login`, or an API key), then mounted into
+# the container at /usr/local/bin/claude. Point CLAUDE_BIN at the host binary if
+# it lives somewhere other than the default below.
+services:
+  video-journal:
+    build:
+      context: .
+      target: prod  # base + CPU-only torch/whisperx for forced-alignment subtitle timing
+    restart: always
+    env_file: .env
+    environment:
+      # Container timezone (keep in sync with TIMEZONE in .env).
+      - TZ=${TIMEZONE:-UTC}
+    ports:
+      # Read-only dashboard (Basic auth, password = DASHBOARD_PASSWORD in .env).
+      # Secure it behind your own reverse proxy / VPN / firewall before exposing.
+      - "${DASHBOARD_PORT:-8080}:8080"
+    volumes:
+      # App state: SQLite DB + per-day footage / work / output.
+      - ./data:/data
+      # Persist the faster-whisper + wav2vec2 model downloads across rebuilds.
+      - ./data/hf-cache:/root/.cache/huggingface
+      # rclone config (create once: docker compose run --rm video-journal rclone config).
+      - ~/.config/rclone:/root/.config/rclone
+      # Claude Code CLI (the reasoning layer) + its login state, from the host.
+      # Override CLAUDE_BIN in .env if your `claude` binary is elsewhere.
+      - ${CLAUDE_BIN:-/usr/local/bin/claude}:/usr/local/bin/claude:ro
+      - ~/.claude:/root/.claude
+      - ~/.claude.json:/root/.claude.json

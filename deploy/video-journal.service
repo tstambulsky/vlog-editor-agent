@@ -1,0 +1,20 @@
+# Fallback deploy if the Claude CLI can't run inside Docker.
+# Replace <INSTALL_DIR> with the absolute path where you cloned the repo, then:
+#   cd <INSTALL_DIR>
+#   python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#   sudo cp deploy/video-journal.service /etc/systemd/system/
+#   sudo systemctl enable --now video-journal
+[Unit]
+Description=video-journal-agent
+After=network-online.target
+
+[Service]
+WorkingDirectory=<INSTALL_DIR>
+ExecStart=<INSTALL_DIR>/.venv/bin/python -m app.main
+Restart=always
+RestartSec=10
+Environment=TZ=America/Los_Angeles
+EnvironmentFile=<INSTALL_DIR>/.env
+
+[Install]
+WantedBy=multi-user.target
