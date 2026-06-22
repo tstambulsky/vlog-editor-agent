@@ -215,7 +215,7 @@ def _render_draft(row, day_dir: Path) -> str:
             for b in edl if isinstance(b, dict)
         )
         parts.append("<table><tr><th>clip</th><th>start</th><th>narration</th>"
-                     f"<th>narración</th></tr>{rows_html}</table>")
+                     f"<th>narration (es)</th></tr>{rows_html}</table>")
 
     caps = [(k, dr.get(k)) for k in
             ("caption_x", "caption_x_es", "caption_linkedin", "caption_linkedin_es")]

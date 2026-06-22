@@ -73,8 +73,8 @@ class Settings(BaseSettings):
 
     # fixed footer appended to every published caption (all platforms, both
     # langs), after the body + any X shoutout. Empty string = no footer.
-    post_signature_en: str = "Edited & narrated by my own AI agent and cloned voice."
-    post_signature_es: str = "Editado y narrado por mi propio agente de IA y voz clonada."
+    post_signature_en: str = ""
+    post_signature_es: str = ""
 
     # Which language(s) each platform PUBLISHES (one primary language per
     # platform beats duplicate same-account posts). Default: English on X,

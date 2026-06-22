@@ -89,7 +89,7 @@ async def send_draft_preview(bot: Bot, d: date) -> None:
     if es_preview and Path(es_preview).exists():
         await bot.send_video(
             settings.telegram_user_id, FSInputFile(Path(es_preview)),
-            caption=f"🎬 Versión 🇪🇸 — Day {day['day_number']}/30 (v{row['version']})",
+            caption=f"🎬 Version 🇪🇸 — Day {day['day_number']}/30 (v{row['version']})",
             width=1080, height=1920,
         )
     notes = draft.get("confidence_notes") or ""
