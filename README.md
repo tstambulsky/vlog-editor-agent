@@ -14,10 +14,10 @@ sends it to you for one-tap approval. Nothing is published until you say so.
 
 ## See it in action
 
-[![Day 9 — a daily video generated end-to-end by the agent](docs/assets/day9-demo.gif)](https://x.com/tomasstambulsky/status/2068344665120678386)
+https://github.com/user-attachments/assets/d0f4fbef-02e8-4227-ab9a-4e86d4dbbcb1
 
 A real result — **Day 9**, generated end-to-end by the agent and posted to X.
-**▶️ [Watch the full video on X](https://x.com/tomasstambulsky/status/2068344665120678386)** · built by **[@tomasstambulsky](https://x.com/tomasstambulsky)**, who runs the series daily with this tool. ([download the clip](docs/assets/day9.mp4))
+**▶️ [Watch it on X](https://x.com/tomasstambulsky/status/2068344665120678386)** · built by **[@tomasstambulsky](https://x.com/tomasstambulsky)**, who runs the series daily with this tool. *(video not loading? [GIF preview](docs/assets/day9-demo.gif) · [download the clip](docs/assets/day9.mp4))*
 
 ## Why
 
