@@ -1,7 +1,7 @@
 """Run the full pipeline for a day and send the Telegram preview.
 
 Same code path the bot's /makeit uses, runnable from the server CLI:
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/run_day.py [YYYY-MM-DD]
 """
 import asyncio

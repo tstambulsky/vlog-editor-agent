@@ -3,7 +3,7 @@ the refreshed Telegram preview. Same path the bot uses when you reply to a draft
 with feedback — exposed as a CLI so a revision can be driven without Telegram.
 
   docker compose -f docker-compose.home.yml run --rm --no-deps -e PYTHONPATH=/srv/app \
-      video-journal python scripts/revise.py [YYYY-MM-DD] "feedback text"
+      auto-vlog python scripts/revise.py [YYYY-MM-DD] "feedback text"
 """
 import asyncio
 import sys

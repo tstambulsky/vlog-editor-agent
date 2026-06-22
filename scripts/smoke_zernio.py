@@ -2,7 +2,7 @@
 presign-upload a tiny test video, create a DRAFT post, read it back, delete it.
 
 Run on the server:
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/smoke_zernio.py
 """
 import asyncio

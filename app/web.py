@@ -326,7 +326,7 @@ async def auth_middleware(request: web.Request, handler):
     if not ok:
         return web.Response(
             status=401, text="Authentication required",
-            headers={"WWW-Authenticate": 'Basic realm="video-journal"'})
+            headers={"WWW-Authenticate": 'Basic realm="auto-vlog"'})
     return await handler(request)
 
 

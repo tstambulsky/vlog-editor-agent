@@ -98,17 +98,17 @@ Voiceover + render run only via `pipeline.render_phase(d)` on "✅ Approve & bui
 
 ```bash
 # tests (Docker-only, no local venv needed)
-docker build --target dev -t video-journal-dev . && docker run --rm video-journal-dev
+docker build --target dev -t auto-vlog-dev . && docker run --rm auto-vlog-dev
 
 # render smoke test with synthetic clips (incl. HDR + freeze cases)
 docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app \
-  video-journal-dev python scripts/smoke_render.py
+  auto-vlog-dev python scripts/smoke_render.py
 
 # full day run / re-voice / re-render / voice A-B
-docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal python scripts/run_day.py [YYYY-MM-DD]
-docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal python scripts/regen_vo.py [date]
-docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal python scripts/rerender.py [date]
-docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal python scripts/voice_test.py [date]
+docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog python scripts/run_day.py [YYYY-MM-DD]
+docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog python scripts/regen_vo.py [date]
+docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog python scripts/rerender.py [date]
+docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog python scripts/voice_test.py [date]
 ```
 
 ## Knowledge persistence

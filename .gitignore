@@ -12,3 +12,5 @@ data/
 *.mp3
 *.MOV
 *.ogg
+# ...but keep committed demo assets
+!docs/assets/*.mp4

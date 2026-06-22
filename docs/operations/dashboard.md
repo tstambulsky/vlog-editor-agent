@@ -65,10 +65,10 @@ Served on `DASHBOARD_PORT` (Basic auth — any username, password is
 ```bash
 # seed synthetic data into a host dir, then run the dashboard standalone
 docker run --rm -v "$PWD":/srv/app -v /tmp/vj-dash:/tmp/vj -e DATA_DIR=/tmp/vj \
-  -e PYTHONPATH=/srv/app video-journal-dev python scripts/smoke_render.py
+  -e PYTHONPATH=/srv/app auto-vlog-dev python scripts/smoke_render.py
 docker run -d --rm --name vj-web -p 8080:8080 -v "$PWD":/srv/app -v /tmp/vj-dash:/tmp/vj \
   -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app -e DASHBOARD_PASSWORD=test \
-  video-journal-dev python -m app.web
+  auto-vlog-dev python -m app.web
 curl -u x:test localhost:8080/        # 200; without -u → 401
 ```
 

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving **video-journal-agent**. Contributions of all
+Thanks for your interest in improving **auto-vlog-editor**. Contributions of all
 kinds are welcome — bug reports, docs, and code.
 
 ## Development setup
@@ -9,11 +9,11 @@ Everything runs in Docker; you don't need a local Python environment.
 
 ```bash
 # Run the test suite
-docker build --target dev -t video-journal-dev . && docker run --rm video-journal-dev
+docker build --target dev -t auto-vlog-dev . && docker run --rm auto-vlog-dev
 
 # Render smoke test with synthetic clips (HDR + freeze-frame cases)
 docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app \
-  video-journal-dev python scripts/smoke_render.py
+  auto-vlog-dev python scripts/smoke_render.py
 ```
 
 If you prefer a local environment: `python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt`.

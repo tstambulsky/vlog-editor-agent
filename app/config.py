@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     first_frame_hook: bool = True
 
     notify_verbose: bool = True
-    bilingual: bool = True  # also produce a Spanish voiceover + video + captions
+    bilingual: bool = False  # optional: also produce a 2nd-language voiceover + video + captions
     burn_subtitles: bool = True  # burn ASS word subtitles into the video
     include_photos: bool = False  # photos (jpg/png/heic) as Ken Burns stills —
     # off: photos in the Drive folder are ignored, the video is clips-only

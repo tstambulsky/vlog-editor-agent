@@ -4,7 +4,7 @@ Exercises probe -> frames -> ASS subtitles -> segments (incl. HDR tone map,
 landscape crop, silent-clip anullsrc) -> concat -> VO mix -> validation.
 
 Run inside the dev image:
-  docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj video-journal-dev \
+  docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj auto-vlog-dev \
       python scripts/smoke_render.py
 """
 import asyncio

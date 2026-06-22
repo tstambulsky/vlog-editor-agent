@@ -1,7 +1,7 @@
 """Re-render a day's current draft reusing its existing voiceovers
 (e.g., after a renderer fix), then send the refreshed preview.
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/rerender.py [YYYY-MM-DD]
 """
 import asyncio

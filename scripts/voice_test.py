@@ -3,7 +3,7 @@
 Uses a shortened cut of the latest draft's English script so the samples are
 comparable and cheap on ElevenLabs characters.
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/voice_test.py [YYYY-MM-DD]
 """
 import asyncio

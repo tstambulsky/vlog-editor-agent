@@ -21,7 +21,7 @@ ENV PYTHONUNBUFFERED=1
 # ./data/hf-cache shadows the cache dir at runtime, so they download once into
 # that persisted volume (same as faster-whisper). TORCH_HOME points there too.
 #   Pre-warm after deploy:
-#   docker compose run --rm --no-deps video-journal python -c \
+#   docker compose run --rm --no-deps auto-vlog python -c \
 #     "import whisperx; whisperx.load_align_model(language_code='en',device='cpu'); \
 #      whisperx.load_align_model(language_code='es',device='cpu')"
 FROM base AS prod
@@ -37,7 +37,7 @@ COPY scripts ./scripts
 CMD ["python", "-m", "app.main"]
 
 # Test image (no torch -> exercises the whisper fallback):
-#   docker build --target dev -t video-journal-dev . && docker run --rm video-journal-dev
+#   docker build --target dev -t auto-vlog-dev . && docker run --rm auto-vlog-dev
 FROM base AS dev
 RUN pip install --no-cache-dir pytest
 COPY app ./app

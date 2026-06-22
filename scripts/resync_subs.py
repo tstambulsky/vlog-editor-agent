@@ -3,7 +3,7 @@ EXISTING voiceover (no new TTS — same audio, same version), then re-render and
 send the refreshed preview. Use after the forced-alignment fix to fix "out of
 sync" subs on an already-voiced day.
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/resync_subs.py [YYYY-MM-DD]
 """
 import asyncio

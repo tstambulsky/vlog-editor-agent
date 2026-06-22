@@ -4,7 +4,7 @@ the preview — the exact path the "✅ Approve & build" button takes.
 Use when a day is parked at `script_review` and you want to build it without
 tapping the button (the hook pick in hook.json is honored at render time).
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app video-journal \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
       python scripts/approve_build.py [YYYY-MM-DD]
 """
 import asyncio

@@ -9,7 +9,7 @@ coherence can be eyeballed.
 
   docker compose run --rm --no-deps \
     -v /tmp/verify_sync.py:/srv/verify_sync.py -e PYTHONPATH=/srv/app \
-    video-journal python /srv/verify_sync.py 2026-06-11 en
+    auto-vlog python /srv/verify_sync.py 2026-06-11 en
 """
 import json
 import re

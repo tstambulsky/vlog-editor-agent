@@ -2,10 +2,10 @@
 # Replace <INSTALL_DIR> with the absolute path where you cloned the repo, then:
 #   cd <INSTALL_DIR>
 #   python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
-#   sudo cp deploy/video-journal.service /etc/systemd/system/
-#   sudo systemctl enable --now video-journal
+#   sudo cp deploy/auto-vlog.service /etc/systemd/system/
+#   sudo systemctl enable --now auto-vlog
 [Unit]
-Description=video-journal-agent
+Description=auto-vlog-editor
 After=network-online.target
 
 [Service]

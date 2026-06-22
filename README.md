@@ -1,7 +1,7 @@
-# video-journal-agent
+# auto-vlog-editor
 
 **An AI agent that turns your daily phone clips into a polished, narrated vertical
-video — reviewed and approved over Telegram, then auto-published to X and LinkedIn.**
+video — reviewed and approved over Telegram, then auto-published to X (LinkedIn optional).**
 
 Drop the day's clips into a Google Drive folder, optionally dictate a voice note
 about what happened, and the agent does the rest: it watches the footage, writes a
@@ -12,7 +12,12 @@ sends it to you for one-tap approval. Nothing is published until you say so.
 ![Python](https://img.shields.io/badge/python-3.12-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)
 
-> **Demo:** _add a sample clip or GIF here_ — e.g. `docs/assets/demo.gif`.
+## See it in action
+
+[![Day 9 — a daily video generated end-to-end by the agent](docs/assets/day9-demo.gif)](https://x.com/tomasstambulsky/status/2068344665120678386)
+
+A real result — **Day 9**, generated end-to-end by the agent and posted to X.
+**▶️ [Watch the full video on X](https://x.com/tomasstambulsky/status/2068344665120678386)** · built by **[@tomasstambulsky](https://x.com/tomasstambulsky)**, who runs the series daily with this tool. ([download the clip](docs/assets/day9.mp4))
 
 ## Why
 
@@ -35,8 +40,9 @@ matters — what actually goes out.
 - 📲 **Telegram approval flow.** Review the script first (cheap), then the rendered
   video; reply with feedback to revise, or tap **Publish**.
 - 🪝 **Cold-open hooks, shoutouts, sign-off footer** — optional, toggleable.
-- 🌎 **Bilingual.** Optionally produce a second-language voiceover, video, and
-  captions, and post one language per platform.
+- 🌎 **Optional bilingual.** Off by default (single-language). Flip `BILINGUAL=true`
+  to also produce a second-language voiceover, video, and captions, and post one
+  language per platform.
 - ✅ **Approval-gated publishing.** Only a day you explicitly approve can ever post.
 - 🐳 **One-container deploy.** Bot + scheduler + read-only dashboard via Docker Compose.
 
@@ -67,7 +73,7 @@ matters — what actually goes out.
    └───────────────────────────────────────────────────────┘
         │ (approved)
         ▼
-   Publish to X + LinkedIn ──► report post URLs
+   Publish to X (+ LinkedIn if enabled) ──► report post URLs
    ```
 
 4. **Approve or revise.** Reply with feedback ("less touristy, more founder-oriented")
@@ -94,12 +100,12 @@ state machine and beat-sync design.
 ### Setup
 
 ```bash
-git clone https://github.com/<you>/video-journal-agent.git
-cd video-journal-agent
+git clone https://github.com/<you>/auto-vlog-editor.git
+cd auto-vlog-editor
 cp .env.example .env        # then fill it in (see Configuration below)
 
 # Configure the Google Drive remote (named to match DRIVE_REMOTE)
-docker compose run --rm video-journal rclone config
+docker compose run --rm auto-vlog rclone config
 
 # Verify the reasoning layer works headless
 claude -p 'Reply with {"ok":true}' --output-format json
@@ -111,6 +117,29 @@ docker compose up -d --build
 Message your bot once so it can reach you, then drop clips into
 `DRIVE_REMOTE/YYYY-MM-DD/` and send `/makeit`. Full deployment notes:
 [`docs/operations/deploy.md`](docs/operations/deploy.md).
+
+### ⚡ One-paste setup (with Claude Code)
+
+Don't want to wire it up by hand? Paste this prompt into
+[Claude Code](https://docs.claude.com/en/docs/claude-code) (or your agent of choice)
+in an empty folder and it will walk you through the whole setup:
+
+```text
+Set up "auto-vlog-editor" (https://github.com/tstambulsky/auto-vlog-editor) for me —
+an AI agent that turns my daily phone clips into a narrated vertical video and posts it to X.
+
+Work with me one step at a time, asking for each credential only when it's needed:
+1. Clone the repo and run `cp .env.example .env`.
+2. Walk me through filling .env:
+   - a Telegram bot token (from @BotFather) and my numeric Telegram user id,
+   - an ElevenLabs API key and a voice id (premade, or clone my own),
+   - a Zernio API key and my X account id,
+   - a Google Drive remote via `rclone config` (match DRIVE_REMOTE).
+3. Make sure the Claude Code CLI is installed and logged in — it's the reasoning layer.
+4. Bring it up with `docker compose up -d --build` and confirm the bot messages me.
+5. Show me how to drop clips into the day's Drive folder and run /makeit.
+Keep all my keys out of git — they live only in .env. Explain each step briefly as we go.
+```
 
 ## Configuration
 
@@ -129,7 +158,7 @@ All configuration is environment variables (see [`.env.example`](.env.example)).
 | `PIPELINE_HOUR/MINUTE`, `PUBLISH_HOUR/MINUTE`, `SYNC_INTERVAL_MIN` | Schedule |
 | `AUTO_PIPELINE` | `false` = nightly check-in instead of auto-build |
 | `SCRIPT_REVIEW` | Review the script before spending a render |
-| `BILINGUAL` | Also produce a second-language voiceover + video + captions |
+| `BILINGUAL` | **Off by default.** `true` also produces a second-language voiceover + video + captions |
 | `FIRST_FRAME_HOOK`, `BURN_SUBTITLES`, `HUMANIZE`, `INCLUDE_PHOTOS` | Feature toggles |
 | `MAX_VIDEO_SECONDS`, `WHISPER_MODEL` | Render cap + ASR model size |
 | `DASHBOARD_PASSWORD`, `DASHBOARD_PORT` | Read-only web dashboard (Basic auth) |
@@ -182,7 +211,7 @@ scripts/           one-off runners (run_day, regen_vo, rerender, voice_test, smo
 ## Running tests
 
 ```bash
-docker build --target dev -t video-journal-dev . && docker run --rm video-journal-dev
+docker build --target dev -t auto-vlog-dev . && docker run --rm auto-vlog-dev
 ```
 
 The `dev` image has no torch, so it exercises the whisper alignment fallback.
