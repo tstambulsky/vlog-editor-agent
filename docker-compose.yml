@@ -1,4 +1,4 @@
-# auto-vlog-editor — production compose.
+# vlog-editor-agent — production compose.
 #
 # Brings up the bot + scheduler + read-only dashboard in one container.
 # Configuration comes from `.env` (copy `.env.example` and fill it in).
@@ -10,7 +10,7 @@
 # the container at /usr/local/bin/claude. Point CLAUDE_BIN at the host binary if
 # it lives somewhere other than the default below.
 services:
-  auto-vlog:
+  vlog-agent:
     build:
       context: .
       target: prod  # base + CPU-only torch/whisperx for forced-alignment subtitle timing
@@ -28,7 +28,7 @@ services:
       - ./data:/data
       # Persist the faster-whisper + wav2vec2 model downloads across rebuilds.
       - ./data/hf-cache:/root/.cache/huggingface
-      # rclone config (create once: docker compose run --rm auto-vlog rclone config).
+      # rclone config (create once: docker compose run --rm vlog-agent rclone config).
       - ~/.config/rclone:/root/.config/rclone
       # Claude Code CLI (the reasoning layer) + its login state, from the host.
       # Override CLAUDE_BIN in .env if your `claude` binary is elsewhere.

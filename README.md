@@ -1,4 +1,4 @@
-# auto-vlog-editor
+# vlog-editor-agent
 
 **An AI agent that turns your daily phone clips into a polished, narrated vertical
 video — reviewed and approved over Telegram, then auto-published to X (LinkedIn optional).**
@@ -110,12 +110,12 @@ state machine and beat-sync design.
 ### Setup
 
 ```bash
-git clone https://github.com/<you>/auto-vlog-editor.git
-cd auto-vlog-editor
+git clone https://github.com/<you>/vlog-editor-agent.git
+cd vlog-editor-agent
 cp .env.example .env        # then fill it in (see Configuration below)
 
 # Configure the Google Drive remote (named to match DRIVE_REMOTE)
-docker compose run --rm auto-vlog rclone config
+docker compose run --rm vlog-agent rclone config
 
 # Verify the reasoning layer works headless
 claude -p 'Reply with {"ok":true}' --output-format json
@@ -135,7 +135,7 @@ Don't want to wire it up by hand? Paste this prompt into
 in an empty folder and it will walk you through the whole setup:
 
 ```text
-Set up "auto-vlog-editor" (https://github.com/tstambulsky/auto-vlog-editor) for me —
+Set up "vlog-editor-agent" (https://github.com/tstambulsky/vlog-editor-agent) for me —
 an AI agent that turns my daily phone clips into a narrated vertical video and posts it to X.
 
 Work with me one step at a time, asking for each credential only when it's needed:
@@ -228,7 +228,7 @@ scripts/           one-off runners (run_day, regen_vo, rerender, voice_test, smo
 ## Running tests
 
 ```bash
-docker build --target dev -t auto-vlog-dev . && docker run --rm auto-vlog-dev
+docker build --target dev -t vlog-agent-dev . && docker run --rm vlog-agent-dev
 ```
 
 The `dev` image has no torch, so it exercises the whisper alignment fallback.

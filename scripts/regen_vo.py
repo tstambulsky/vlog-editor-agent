@@ -1,7 +1,7 @@
 """Regenerate the voiceover (current voice settings) for a day's existing
 draft and send the refreshed preview — same as the bot's 🎙 button.
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app vlog-agent \
       python scripts/regen_vo.py [YYYY-MM-DD]
 """
 import asyncio

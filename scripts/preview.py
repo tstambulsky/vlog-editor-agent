@@ -5,7 +5,7 @@ at PREVIEW_SCALE (default 540x960) with the ultrafast preset into a distinct
 `output/dayNN_vM_en_fast.mp4`, so it never clobbers the publish-quality render.
 A full iteration is ~6 min; this targets well under a minute.
 
-  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog \
+  docker compose run --rm --no-deps -e PYTHONPATH=/srv/app vlog-agent \
       python scripts/preview.py [YYYY-MM-DD]
 
 Flags:

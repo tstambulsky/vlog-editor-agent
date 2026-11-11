@@ -59,7 +59,7 @@ use `gdrive:VideoJournal`) and bind-mount your `rclone.conf` into the container.
 Verify:
 
 ```bash
-docker compose run --rm --no-deps auto-vlog rclone lsd gdrive:VideoJournal
+docker compose run --rm --no-deps vlog-agent rclone lsd gdrive:VideoJournal
 ```
 
 ### State (`./data`)
@@ -79,7 +79,7 @@ voiceover. To avoid the first scheduled run paying that cost, pre-warm them into
 the cache volume:
 
 ```bash
-docker compose run --rm --no-deps auto-vlog python -c \
+docker compose run --rm --no-deps vlog-agent python -c \
   "import whisperx; whisperx.load_align_model(language_code='en',device='cpu'); \
    whisperx.load_align_model(language_code='es',device='cpu')"
 ```
@@ -103,7 +103,7 @@ All run as one-off containers sharing `/data` with the live bot — safe because
 stages are idempotent and SQLite handles multi-process access:
 
 ```bash
-docker compose run --rm --no-deps -e PYTHONPATH=/srv/app auto-vlog python scripts/<name>.py [args]
+docker compose run --rm --no-deps -e PYTHONPATH=/srv/app vlog-agent python scripts/<name>.py [args]
 ```
 
 | Script | Purpose |
@@ -122,8 +122,8 @@ sys.path, not the app root).
 ## Testing
 
 ```bash
-docker build --target dev -t auto-vlog-dev . && docker run --rm -e DATA_DIR=/tmp/vj auto-vlog-dev          # pytest
-docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app auto-vlog-dev python scripts/smoke_render.py
+docker build --target dev -t vlog-agent-dev . && docker run --rm -e DATA_DIR=/tmp/vj vlog-agent-dev          # pytest
+docker run --rm -v "$PWD":/srv/app -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app vlog-agent-dev python scripts/smoke_render.py
 ```
 
 Tests run in Docker only — no virtualenv needed.
@@ -151,7 +151,7 @@ outputs/drafts/voiceovers are kept. Without this, weeks of footage
 ## systemd fallback
 
 If you'd rather not run under Docker (or the CLI ever fights the container), a
-unit file is provided at `deploy/auto-vlog.service` to run the app from a
+unit file is provided at `deploy/vlog-agent.service` to run the app from a
 virtualenv on the host. Docker remains the primary, supported path.
 
 See also: [pipeline.md](../architecture/pipeline.md) ·

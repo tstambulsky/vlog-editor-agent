@@ -4,7 +4,7 @@ no other credentials.
 
 Run on the server:
   docker compose run --rm --no-deps -e DATA_DIR=/tmp/vj -e PYTHONPATH=/srv/app \
-      auto-vlog python scripts/smoke_draft.py
+      vlog-agent python scripts/smoke_draft.py
 """
 import asyncio
 import json

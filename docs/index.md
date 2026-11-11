@@ -1,4 +1,4 @@
-# auto-vlog-editor — docs index
+# vlog-editor-agent — docs index
 
 Daily video journal automation: phone clips in Google Drive → analyzed on the
 server → Claude writes a beat-synced story → script-review gate → ElevenLabs
