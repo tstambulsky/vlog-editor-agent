@@ -39,6 +39,16 @@ matters — what actually goes out.
   word; the on-screen text always comes from the script, never the (mis-heard) ASR.
 - 📲 **Telegram approval flow.** Review the script first (cheap), then the rendered
   video; reply with feedback to revise, or tap **Publish**.
+- ✍️ **No-slop pass.** Every fresh draft is rewritten to strip AI-writing tells, then
+  scored /50 by an independent reviewer (plus a mechanical lint for dashes, emoji,
+  closing questions…) and rewritten until it clears the bar. Your voice lives in one
+  editable file, [`prompts/writing/x-voice.md`](prompts/writing/x-voice.md).
+- 🧠 **It learns from your corrections.** Every script or tweet edit you send is stored
+  and fed back into the next drafts, so the same mistake doesn't come back.
+- ✏️ **Edit just the tweet.** Rewrite the X caption from Telegram without re-rendering.
+- 🕐 **Wrong-clock clips.** Clips whose camera clock is off get flagged at script
+  review; `/retime` pins the real time so the story stays in order.
+- 💾 **Nightly DB backup** to `data/backups/` and your Drive.
 - 🪝 **Cold-open hooks, shoutouts, sign-off footer** — optional, toggleable.
 - 🌎 **Optional bilingual.** Off by default (single-language). Flip `BILINGUAL=true`
   to also produce a second-language voiceover, video, and captions, and post one
@@ -154,7 +164,10 @@ All configuration is environment variables (see [`.env.example`](.env.example)).
 | `PUBLISH_LANGS` | Language per platform, e.g. `twitter:en,linkedin:es` |
 | `CLAUDE_CODE_COMMAND`, `CLAUDE_BIN`, `CLAUDE_TIMEOUT_S` | Reasoning-layer command, host binary path, per-call timeout |
 | `DRIVE_REMOTE` | rclone `remote:path` root for day folders |
-| `TRIP_START_DATE`, `TIMEZONE` | Day numbering + scheduling timezone |
+| `TRIP_START_DATE`, `TIMEZONE` | Day numbering + scheduling timezone (scheduled jobs stay quiet outside days 1..`TRIP_DAYS`) |
+| `TRIP_PLACE`, `TRIP_DAYS` | Fill the series bible and the `day N/M in <place>` tweet line |
+| `TRIP_CONTEXT` | Optional private free text for the agent: what the trip is, who to tag |
+| `REVIEW_ROUNDS`, `REVIEW_MIN_SCORE`, `TWEET_LOWERCASE` | No-slop reviewer loop (rounds, pass mark /50) + optional all-lowercase tweet lint |
 | `PIPELINE_HOUR/MINUTE`, `PUBLISH_HOUR/MINUTE`, `SYNC_INTERVAL_MIN` | Schedule |
 | `AUTO_PIPELINE` | `false` = nightly check-in instead of auto-build |
 | `SCRIPT_REVIEW` | Review the script before spending a render |
@@ -172,6 +185,7 @@ All configuration is environment variables (see [`.env.example`](.env.example)).
 | `/note <text>` | Add context for today's story |
 | `/shoutout @a @b` | Set today's X shoutout handles |
 | `/redo` | Re-draft from scratch |
+| `/retime` | Fix the time of a clip whose camera clock was wrong |
 | `/menu`, `/context`, `/folder`, `/preview` | Inline menu, accumulated context, Drive link, resend latest draft |
 
 Any plain text or voice note becomes a revision request while a draft is awaiting
@@ -182,9 +196,12 @@ approval; otherwise it's saved as today's note. See
 
 The agent is series-agnostic. To run your own:
 
-- Edit [`prompts/editorial.md`](prompts/editorial.md) — the "series bible" prompt.
-  Fill in `[SERIES_TITLE]`, `[SUBJECT]`, `[AUDIENCE]`, `[LOCATION]`, `[TOTAL_DAYS]`.
-- Set `TRIP_START_DATE` (Day 1) and `TIMEZONE`.
+- Set `TRIP_PLACE`, `TRIP_DAYS`, `TRIP_START_DATE` (Day 1) and `TIMEZONE`; put anything
+  private about the trip in `TRIP_CONTEXT` (`.env` only).
+- Edit [`prompts/editorial.md`](prompts/editorial.md), the "series bible": who you are,
+  who it's for, what the series is about.
+- Edit [`prompts/writing/x-voice.md`](prompts/writing/x-voice.md), your house writing
+  rules and tweet format. It overrides the generic anti-slop rules.
 - Pick a voice (`ELEVENLABS_VOICE_ID`) and tune the `VOICE_*` settings; `scripts/voice_test.py` helps you A/B.
 - Choose your languages with `PUBLISH_LANGS` and `BILINGUAL`.
 
@@ -224,7 +241,7 @@ The `dev` image has no torch, so it exercises the whisper alignment fallback.
 - **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** + **[WhisperX](https://github.com/m-bain/whisperX)** — transcription & word-level forced alignment
 - **[ffmpeg](https://ffmpeg.org)** — rendering, HDR tone-mapping, subtitle burn-in
 - **[rclone](https://rclone.org)** — Google Drive sync
-- Narration de-AI-ification uses the [`blader/humanizer`](https://github.com/blader/humanizer) prompt (MIT), vendored at [`prompts/humanizer.md`](prompts/humanizer.md).
+- Narration de-AI-ification uses [`blader/humanizer`](https://github.com/blader/humanizer) and [`hardikpandya/stop-slop`](https://github.com/hardikpandya/stop-slop) (both MIT), vendored in [`prompts/writing/`](prompts/writing/).
 
 ## License
 

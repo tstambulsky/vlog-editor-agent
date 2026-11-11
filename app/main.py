@@ -47,7 +47,7 @@ async def main() -> None:
             web_runner = None
 
     try:
-        await _send("🟢 SF journal bot is up.")
+        await _send(f"🟢 {settings.series_name} bot is up.")
     except Exception:
         # A fresh bot can't message a user who never pressed Start on it.
         log.warning("startup message failed — open the bot in Telegram and press Start")

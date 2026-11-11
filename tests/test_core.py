@@ -217,9 +217,9 @@ class TestShoutout:
         self.settings.data_dir = self._old_dir
 
     def test_parse_handles_with_and_without_at(self):
-        assert self.shoutout.parse_handles("@abed_hamami @ionpetropoulos") == \
-            ["abed_hamami", "ionpetropoulos"]
-        assert self.shoutout.parse_handles("abed, ion") == ["abed", "ion"]
+        assert self.shoutout.parse_handles("@alice_dev @bob_builds") == \
+            ["alice_dev", "bob_builds"]
+        assert self.shoutout.parse_handles("alice, bob") == ["alice", "bob"]
 
     def test_parse_handles_dedupes_preserving_order(self):
         assert self.shoutout.parse_handles("@a @b @a") == ["a", "b"]
@@ -229,8 +229,8 @@ class TestShoutout:
         assert self.shoutout.parse_handles("@" + "x" * 20 + " @ok") == ["ok"]
 
     def test_line_two_handles_en(self):
-        line = self.shoutout.shoutout_line(["abed_hamami", "ionpetropoulos"], "en")
-        assert line == "Shoutout to @abed_hamami and @ionpetropoulos."
+        line = self.shoutout.shoutout_line(["alice_dev", "bob_builds"], "en")
+        assert line == "shoutout to @alice_dev and @bob_builds."
 
     def test_line_es_uses_y(self):
         line = self.shoutout.shoutout_line(["a", "b"], "es")
@@ -1040,9 +1040,14 @@ class TestHumanizer:
 
     def test_prompt_embeds_skill_and_beat_count(self):
         from app.prompts import build_humanize_prompt
-        p = build_humanize_prompt([NARRATION_A, NARRATION_B], "cap x", "cap li")
-        # the vendored skill text is inlined
-        assert "Remove AI Writing Patterns" in p
+        p = build_humanize_prompt([NARRATION_A, NARRATION_B], "cap x", "cap li",
+                                  first_line="day 3/8 in bali")
+        # the whole vendored stack is inlined, house rules last (they override)
+        assert "Humanizer: remove AI writing patterns" in p
+        assert "Stop Slop" in p
+        assert p.index("Stop Slop") < p.index("House rules: how this journal writes")
+        assert "`day 3/8 in bali`" in p
+        assert "A reviewer scored" not in p  # first pass carries no review notes
         # the hard contract that protects beat-sync
         assert "EXACTLY 2 narration beats" in p
         assert "±15%" in p
@@ -1053,10 +1058,25 @@ class TestHumanizer:
         from app.schemas import HumanizedText
         h = HumanizedText(narrations=["a", "b"], caption_x="x", caption_linkedin="y")
         assert len(h.narrations) == 2
-        with pytest.raises(ValidationError):  # caption_x over 280
-            HumanizedText(narrations=["a"], caption_x="x" * 281, caption_linkedin="y")
+        with pytest.raises(ValidationError):  # caption_x over 600
+            HumanizedText(narrations=["a"], caption_x="x" * 601, caption_linkedin="y")
         with pytest.raises(ValidationError):  # narrations required
             HumanizedText(narrations=[], caption_x="x", caption_linkedin="y")
+
+    def test_tweet_reply_schema(self):
+        from app.schemas import TweetReply
+        assert TweetReply(caption_x="Day 1/30. A punchier tweet.").caption_x
+        with pytest.raises(ValidationError):  # caption_x over 600
+            TweetReply(caption_x="x" * 601)
+
+    def test_tweet_revision_prompt_includes_feedback(self):
+        from app.prompts import build_tweet_revision_prompt
+        p = build_tweet_revision_prompt("current tweet here", "make it punchier",
+                                        theme="a theme", script="the script",
+                                        first_line="day 2/8 in bali")
+        assert "`day 2/8 in bali`" in p
+        assert "current tweet here" in p and "make it punchier" in p
+        assert "600 characters" in p and '"caption_x"' in p
 
     def test_stage_humanize_applies_in_place(self, monkeypatch):
         import asyncio
@@ -1119,3 +1139,258 @@ class TestHumanizer:
         original = Draft.model_validate(make_draft())
         out = asyncio.run(pipeline.stage_humanize(self.d, original))
         assert out.voiceover_script == original.voiceover_script  # unchanged
+
+
+class TestClockfix:
+    """Camera-clock corrections: the Ray-Ban glasses sometimes stamp a clip with
+    a wrong DATE, scrambling capture order vs the iPhone clips. clockfix flags
+    those (suspect) and pins a corrected, sticky time (override) in a sibling
+    clockfix.json — re-applied on every build so the fix is idempotent."""
+
+    def setup_method(self):
+        import tempfile
+        from app import clockfix
+        from app.config import settings
+        self.clockfix = clockfix
+        self.settings = settings
+        self._old_dir = settings.data_dir
+        settings.data_dir = Path(tempfile.mkdtemp())
+
+    def teardown_method(self):
+        self.settings.data_dir = self._old_dir
+
+    def _meta(self, filename, created_local):
+        from app.services.analyze import ClipMeta
+        # build a ClipMeta whose normalized fields are already set to the given
+        # (possibly wrong-day) local ISO, mirroring a fresh probe.
+        from app.services.analyze import normalize_ts
+        _, epoch = normalize_ts(created_local)
+        return ClipMeta(filename=filename, duration_s=5.0,
+                        created_ts=created_local, width=1080, height=1920,
+                        hdr=False, has_audio=True, created_local=created_local,
+                        created_epoch=epoch)
+
+    def test_redate_to_day_keeps_time_of_day(self):
+        d = date(2026, 6, 12)
+        out = self.clockfix.redate_to_day(d, "2026-06-09T15:30:00-07:00")
+        assert out.startswith("2026-06-12T15:30:00")
+        assert "-07:00" in out
+
+    def test_redate_to_day_garbage(self):
+        d = date(2026, 6, 12)
+        assert self.clockfix.redate_to_day(d, "") == ""
+        assert self.clockfix.redate_to_day(d, "not-a-date") == ""
+
+    def test_local_for_day_and_epoch_roundtrip(self):
+        d = date(2026, 6, 12)
+        iso = self.clockfix.local_for_day(d, 15, 30)
+        assert iso.startswith("2026-06-12T15:30:00")
+        assert "-07:00" in iso
+        # epoch_of round-trips back to the same instant
+        from datetime import datetime
+        assert self.clockfix.epoch_of(iso) == datetime.fromisoformat(iso).timestamp()
+        assert self.clockfix.epoch_of("") == 0.0
+
+    def test_apply_redates_wrong_day_clip_and_flags_suspect(self):
+        d = date(2026, 6, 12)
+        m = self._meta("video-584.mov", "2026-06-09T15:30:00-07:00")
+        out = self.clockfix.apply(d, m)
+        assert out.created_local.startswith("2026-06-12T15:30:00")  # same time, day d
+        assert out.created_epoch == self.clockfix.epoch_of(out.created_local)
+        assert "video-584.mov" in self.clockfix.get_suspects(d)
+        assert self.clockfix.get_overrides(d)["video-584.mov"] == out.created_local
+
+    def test_apply_leaves_on_day_clip_untouched(self):
+        d = date(2026, 6, 12)
+        m = self._meta("IMG_0001.MOV", "2026-06-12T07:02:04-07:00")
+        before = m.created_local
+        out = self.clockfix.apply(d, m)
+        assert out.created_local == before
+        assert self.clockfix.get_suspects(d) == []
+        assert self.clockfix.get_overrides(d) == {}
+
+    def test_override_is_sticky_across_rebuilds(self):
+        d = date(2026, 6, 12)
+        # first build: wrong-day clip becomes an override
+        first = self.clockfix.apply(d, self._meta("video-584.mov",
+                                                  "2026-06-09T15:30:00-07:00"))
+        pinned = first.created_local
+        # second build: the raw probe STILL says the wrong day, but the override
+        # wins and re-pins the corrected time (idempotent).
+        second = self.clockfix.apply(d, self._meta("video-584.mov",
+                                                   "2026-06-09T15:30:00-07:00"))
+        assert second.created_local == pinned
+        assert self.clockfix.get_suspects(d).count("video-584.mov") == 1
+
+    def test_set_override_and_remove_suspect_persist(self):
+        d = date(2026, 6, 12)
+        self.clockfix.add_suspect(d, "video-584.mov")
+        self.clockfix.set_override(d, "video-584.mov", "2026-06-12T16:00:00-07:00")
+        assert self.clockfix.get_overrides(d)["video-584.mov"] == \
+            "2026-06-12T16:00:00-07:00"
+        self.clockfix.remove_suspect(d, "video-584.mov")
+        assert "video-584.mov" not in self.clockfix.get_suspects(d)
+        # override survives the suspect removal (it's authoritative)
+        assert "video-584.mov" in self.clockfix.get_overrides(d)
+
+    def test_override_wins_over_wrong_day_detection(self):
+        d = date(2026, 6, 12)
+        # founder pinned 16:00 via /retime; a later rebuild's raw probe is wrong-day
+        self.clockfix.set_override(d, "video-584.mov", "2026-06-12T16:00:00-07:00")
+        out = self.clockfix.apply(d, self._meta("video-584.mov",
+                                                "2026-06-09T15:30:00-07:00"))
+        assert out.created_local == "2026-06-12T16:00:00-07:00"
+        # not re-flagged as suspect (the override path returns early)
+        assert self.clockfix.get_suspects(d) == []
+
+
+class TestTripConfig:
+    def test_day_label_and_bible_use_trip_settings(self, monkeypatch):
+        from app import prompts
+        from app.config import settings
+        monkeypatch.setattr(settings, "trip_place", "Bali")
+        monkeypatch.setattr(settings, "trip_days", 8)
+        monkeypatch.setattr(settings, "trip_start_date", date(2026, 11, 14))
+        d = date(2026, 11, 16)
+        assert settings.day_label(d) == "Day 3/8"
+        assert prompts.tweet_first_line(d) == "day 3/8 in bali"
+        bible = prompts.editorial()
+        assert "8 days in Bali" in bible
+        assert "{{" not in bible and "San Francisco" not in bible
+        assert "House rules" in bible  # writing rules ride along with the bible
+
+    def test_draft_prompt_carries_context_and_corrections(self, monkeypatch, tmp_path):
+        from app import db, prompts
+        from app.config import settings
+        monkeypatch.setattr(settings, "trip_context", "a surf week with friends by the beach")
+        d = date(2026, 6, 15)
+        db.connect()
+        db.add_correction(d, "tweet", "stop saying vibrant")
+        p = prompts.build_draft_prompt(d)
+        assert "a surf week with friends by the beach" in p
+        assert "stop saying vibrant" in p
+        assert "The tweet's first line today is exactly" in p
+
+
+class TestSlopLint:
+    def test_clean_tweet_passes(self):
+        from app import slop
+        t = "day 3/8 in bali\n\nshipped the demo at 2am. the AI part took 20 min\n\nthanks @SomeHost for the dinner"
+        assert slop.lint_tweet(t, "day 3/8 in bali") == []
+
+    def test_tweet_findings(self):
+        from app import slop
+        t = "Day 3/8 in Bali 🌴\n\nI loved it — Acme was great #bali\n\nwould you go?"
+        issues = " | ".join(slop.lint_tweet(t, "day 3/8 in bali"))
+        for needle in ("first line", "dash", "emoji", "closing question", "hashtags",
+                       "Bali", "Acme", "I"):
+            assert needle in issues, needle
+
+    def test_lowercase_rule_is_optional(self):
+        from app import slop
+        t = "day 3/8 in bali\n\nShipped the demo at 2am."
+        assert any("lowercase" in i for i in slop.lint_tweet(t, "day 3/8 in bali"))
+        assert slop.lint_tweet(t, "day 3/8 in bali", lowercase=False) == []
+
+    def test_writing_rules_skip_missing_reference(self, monkeypatch, tmp_path):
+        from app import prompts
+        monkeypatch.setattr(prompts, "REFERENCE_VOICES_PATH", tmp_path / "missing.md")
+        assert "Reference voices" not in prompts.writing_rules()
+        assert "HOUSE RULES" in prompts.writing_rules()
+
+    def test_narration_findings(self):
+        from app import slop
+        assert slop.lint_narration("Normal spoken line, with Caps. Ends well.") == []
+        issues = slop.lint_narration("It was great — truly. Would you come?")
+        assert len(issues) == 2
+
+
+class TestPolishLoop:
+    d = date(2026, 6, 15)
+
+    def _setup(self, monkeypatch, scores):
+        import asyncio  # noqa: F401
+        from app import db, pipeline
+        from app.schemas import HumanizedText, SlopReview
+        db.connect()
+        calls = {"humanize": 0, "review": 0, "notes": []}
+
+        async def fake(prompt, cwd, schema, extra_validate=None):
+            if schema is SlopReview:
+                n, t = scores[calls["review"]]
+                calls["review"] += 1
+                return SlopReview(narration_score=n, tweet_score=t, issues=["tweet: \"x\" -> y"])
+            calls["humanize"] += 1
+            calls["notes"].append("A reviewer scored" in prompt)
+            return HumanizedText(
+                narrations=[NARRATION_A + f" v{calls['humanize']}", NARRATION_B],
+                caption_x="day 1/30 in san francisco\n\nshipped it", caption_linkedin="li")
+
+        monkeypatch.setattr(pipeline, "run_structured", fake)
+        return pipeline, calls
+
+    def test_passes_first_review(self, monkeypatch):
+        import asyncio
+        pipeline, calls = self._setup(monkeypatch, [(47, 46)])
+        out = asyncio.run(pipeline.stage_polish(self.d, Draft.model_validate(make_draft())))
+        assert calls == {"humanize": 1, "review": 1, "notes": [False]}
+        assert out.quality == "narration 47/50 · tweet 46/50"
+
+    def test_rewrites_until_pass_with_review_notes(self, monkeypatch):
+        import asyncio
+        pipeline, calls = self._setup(monkeypatch, [(40, 38), (46, 45)])
+        out = asyncio.run(pipeline.stage_polish(self.d, Draft.model_validate(make_draft())))
+        assert calls["humanize"] == 2 and calls["review"] == 2
+        assert calls["notes"] == [False, True]  # the rewrite got the reviewer's issues
+        assert out.edl[0].narration.endswith("v2") and "45/50" in out.quality
+
+    def test_keeps_best_when_rewrites_get_worse(self, monkeypatch):
+        import asyncio
+        pipeline, calls = self._setup(monkeypatch, [(44, 44), (30, 30), (35, 35)])
+        out = asyncio.run(pipeline.stage_polish(self.d, Draft.model_validate(make_draft())))
+        assert calls["review"] == 3  # initial + review_rounds (2) rewrites
+        assert out.edl[0].narration.endswith("v1") and "44/50" in out.quality
+
+    def test_lint_caps_score(self, monkeypatch):
+        import asyncio
+        from app import pipeline
+        from app.schemas import SlopReview
+        draft = Draft.model_validate(make_draft())  # SF-era caption: wrong first line
+
+        async def fake(prompt, cwd, schema, extra_validate=None):
+            return SlopReview(narration_score=50, tweet_score=50, issues=[])
+
+        monkeypatch.setattr(pipeline, "run_structured", fake)
+        review, lint = asyncio.run(pipeline.stage_review(self.d, draft))
+        assert lint and review.tweet_score < 45
+        assert review.issues[:len(lint)] == lint
+
+
+class TestCorrectionsAndBackup:
+    def test_corrections_roundtrip_and_backup(self, tmp_path):
+        import sqlite3
+
+        from app import db
+        db.connect()
+        db.add_correction(date(2026, 6, 15), "script", "less touristy")
+        db.add_correction(date(2026, 6, 15), "script", "   ")  # blank ignored
+        texts = [r["text"] for r in db.recent_corrections(50)]
+        assert texts[-1] == "less touristy" and "" not in texts
+        out = tmp_path / "b.sqlite"
+        db.backup_to(out)
+        n = sqlite3.connect(out).execute("SELECT count(*) FROM corrections").fetchone()[0]
+        assert n >= 1
+
+
+def test_in_trip_window(monkeypatch):
+    """Pre-trip days used to ping as 'Day -2' (reported 2026-11-11). Scheduled
+    jobs gate on in_trip, which is true only for days 1..trip_days."""
+    from app.config import settings
+    monkeypatch.setattr(settings, "trip_days", 8)
+    monkeypatch.setattr(settings, "trip_start_date", date(2026, 11, 14))
+    assert settings.day_number(date(2026, 11, 11)) == -2
+    assert not settings.in_trip(date(2026, 11, 11))
+    assert not settings.in_trip(date(2026, 11, 13))
+    assert settings.in_trip(date(2026, 11, 14))
+    assert settings.in_trip(date(2026, 11, 21))
+    assert not settings.in_trip(date(2026, 11, 22))

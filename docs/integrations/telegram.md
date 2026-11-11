@@ -74,7 +74,7 @@ A purely text-post feature: the founder can mention a few X handles in the
 day's **X** post to thank people / drive interaction. Those people are NOT in
 the video and never touch the EDL, narration, or `Draft` schema.
 
-- **Input**: `/shoutout @abed_hamami @ionpetropoulos` (the `@` is optional;
+- **Input**: `/shoutout @alice_dev @bob_builds` (the `@` is optional;
   comma- or space-separated). It scopes to the current day (`_feedback_day()
   or _today()` — same day-resolution as feedback). `parse_handles` is plain
   structured extraction (regex, ≤15 word chars, de-duped, order-preserving) —
@@ -96,7 +96,7 @@ the video and never touch the EDL, narration, or `Draft` schema.
   X shoutout. (If real names are ever captured, a LinkedIn plain-text mention
   could be added in the same helper.)
 - **Example line**: `Shoutout to the friends who showed me so much of SF today:
-  @abed_hamami and @ionpetropoulos.`
+  @alice_dev and @bob_builds.`
 
 ## Nightly check-in vs auto-build (`AUTO_PIPELINE`)
 
@@ -114,15 +114,27 @@ voiceover/render — the cheap words are approved first, not after a ~4-min buil
 After drafting, the day parks in `script_review` and `send_script_review(bot, d)`
 sends the script **beat-by-beat**: each beat labeled with its clip + **local
 capture time** (so the founder sees the footage backing each line), EN narration,
-and ES underneath when bilingual. Keyboard:
+and ES underneath when bilingual. It also shows the **🐦 tweet (X)** — exactly as
+it will post (caption + shoutout + sign-off, via `_tweet_preview`) — so the tweet
+is reviewable BEFORE the multi-minute render, not only after it. Keyboard:
 
-`✅ Approve & build` / `🔄 Full redo` `🗑 Discard`
+`✅ Approve & build` / `✏️ Edit tweet` / `🔄 Full redo` `🗑 Discard`
 
 - **✅ Approve & build** (`approvebuild|<date>`, `on_approve_build`) runs
   `pipeline.render_phase` → voiceover + render → `awaiting_approval` → the usual
   draft preview. Guards stale taps (day no longer in `script_review`).
-- **Revise**: just reply with text — that's SCRIPT feedback (revises via
-  `stage_draft`, re-shows the script, no render; see free-text routing above).
+- **✏️ Edit tweet** (`edittweet|<date>`, `on_edit_tweet`) arms **tweet-only**
+  feedback: it sets the module-level `_pending_tweet_edit` day flag, and the NEXT
+  text message is consumed FIRST in `_route_text` → `pipeline.revise_tweet()`,
+  which rewrites `caption_x` via the LLM (`build_tweet_revision_prompt` +
+  `TweetReply`) and echoes the new tweet. NO re-draft, NO render — the caption is
+  applied at publish time. Same button + flow on the post-render preview. The
+  founder always sends **feedback** ("punchier, lead with the SDK"); the LLM
+  rewrites the tweet.
+- **Revise**: reply with text (without tapping Edit tweet) — that's SCRIPT
+  feedback (revises via `stage_draft`, re-shows the script, no render; see
+  free-text routing above). Tapping Edit tweet first routes the next message to
+  the tweet instead.
 - **Force-build bypass**: `🔄 Full redo` re-drafts (and, gate on, re-shows the
   script); to skip the gate per-day, the founder can flip `SCRIPT_REVIEW=false`,
   or simply approve. `/preview` (and `menu|preview`) resend the **script** while
@@ -162,16 +174,19 @@ cold-open, not a beat) is render-side — see
 
 ## Draft preview
 
-Sent after every (re)build: 🇺🇸 video, 🇪🇸 video (if bilingual), then a text
-message with theme, both scripts, both X captions, the X shoutout line (if any
-handles are set for the day), LinkedIn caption, confidence notes, and the
-inline keyboard:
+Sent after every (re)build: the 🇺🇸 video, then a text message showing **only the
+EN tweet (X)** — exactly as it will post (caption + shoutout + sign-off, via
+`_tweet_preview`) — plus confidence notes and the inline keyboard:
 
-`✅ Publish 8AM` `🚀 Publish now` / `🎙 New voiceover` `🔄 Full redo` / `🗑 Discard` (with confirm tap)
+`✅ Publish 8AM` `🚀 Publish now` / `✏️ Edit tweet` / `🎙 New voiceover` `🔄 Full redo` / `🗑 Discard` (with confirm tap)
 
-Buttons publish via `publishing.publish_day()` only after setting the day to
-`approved`. Telegram media captions cap at 1024 chars — that's why the text
-is a separate message (4000-char trim).
+Since 2026-06-21 the preview is deliberately tweet-focused: the voiceover script,
+the Spanish video/caption, and the LinkedIn caption are **not** shown (publishing
+is X/English only — see the gate above and `_langs_for`). **✏️ Edit tweet** works
+here too (rewrites `caption_x`, no re-render). Buttons publish via
+`publishing.publish_day()` only after setting the day to `approved`. Telegram
+media captions cap at 1024 chars — that's why the text is a separate message
+(4000-char trim).
 
 ## Notifications (`app/notify.py`)
 

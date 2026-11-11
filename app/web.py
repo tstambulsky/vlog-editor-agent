@@ -155,10 +155,10 @@ async def handle_index(request: web.Request) -> web.Response:
             f"{_badge(status)}"
             f"<div class='theme'>{e(theme)}</div></a>"
         )
-    body = ("<h1>🎬 Video Journal</h1>"
+    body = (f"<h1>🎬 {e(settings.series_name.title())}</h1>"
             + (f"<div class='grid'>{''.join(cards)}</div>" if cards
                else "<p class='muted'>No days yet — the trip hasn't started.</p>"))
-    return _page("Video Journal", body)
+    return _page(settings.series_name.title(), body)
 
 
 def _render_clips(d: date, day_dir: Path) -> str:

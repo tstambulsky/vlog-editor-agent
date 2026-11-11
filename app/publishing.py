@@ -24,7 +24,7 @@ def _langs_for(platform: str) -> list[str]:
 
 
 def next_publish_time(now: datetime) -> datetime:
-    """Next 08:00 (configurable) SF time strictly after now."""
+    """Next publish_hour:publish_minute (trip-local time) strictly after now."""
     target = datetime.combine(now.date(),
                               time(settings.publish_hour, settings.publish_minute),
                               tzinfo=settings.tz)

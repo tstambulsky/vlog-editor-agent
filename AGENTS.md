@@ -83,6 +83,22 @@ Photos in the Drive folder are ignored — the video is clips-only. Set
   front at render time. It is NOT a beat (invisible to beat-sync). Keep the selection
   out of the Draft/EDL.
 
+### No-slop pass (`HUMANIZE`, `REVIEW_ROUNDS`, `REVIEW_MIN_SCORE`)
+Fresh EN drafts go humanize → independent review (scores narration + tweet /50, never
+rewrites; `app/slop.py` mechanical lint caps the score) → rewrite while below the bar,
+max `REVIEW_ROUNDS`; the best-scoring version is kept in `Draft.quality`. Rewrites are
+**per beat** (same count/order, ±15% words) or beat-sync breaks. Edit the voice in
+`prompts/writing/x-voice.md`; don't hand-edit the vendored `humanizer.md`/`stop-slop.md`.
+
+### Corrections are memory
+Every script feedback and tweet edit lands in the `corrections` table and is injected
+into the draft, humanize, review and tweet prompts. Don't route feedback around
+`db.add_correction`.
+
+### Trip window
+`settings.in_trip(d)` is true only for days 1..`TRIP_DAYS`; scheduled jobs (sync, nightly
+build, folder pings) skip other days. Manual commands always work.
+
 ### Pipeline toggles (all default on)
 `BURN_SUBTITLES`, `AUTO_PIPELINE` (off = nightly check-in instead of auto-build),
 `FIRST_FRAME_HOOK`, `SCRIPT_REVIEW` (gate the script before spending a render),

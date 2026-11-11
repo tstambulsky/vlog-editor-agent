@@ -1,4 +1,4 @@
-"""APScheduler jobs — all times in America/Los_Angeles regardless of server TZ."""
+"""APScheduler jobs — all times in settings.timezone (the trip's local time) regardless of server TZ."""
 import asyncio
 import logging
 import shutil
@@ -41,6 +41,8 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
     async def sync_poll():
         """Pick up freshly uploaded clips during the day and confirm them."""
         d = _today()
+        if not settings.in_trip(d):
+            return
         day = db.get_day(d)
         if day and day["status"] not in ("collecting", "synced"):
             return
@@ -60,6 +62,8 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
         """Self-healing net: pre-process any clip in today's raw/ that still
         lacks its keyframes/transcript (covers bot-was-down / Drive-only)."""
         d = _today()
+        if not settings.in_trip(d):
+            return
         day = db.get_day(d)
         if day and day["status"] not in ("collecting", "synced"):
             return  # the day is already drafting/rendering/published
@@ -73,6 +77,8 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
 
     async def nightly_pipeline():
         d = _today()
+        if not settings.in_trip(d):
+            return  # before/after the trip: no build, no "Day -2" ping
         day = db.get_or_create_day(d)
         if day["status"] not in ("collecting", "synced"):
             return  # already built today (e.g. via /makeit)
@@ -104,6 +110,8 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
 
     async def create_tomorrow_folder():
         tomorrow = _today() + timedelta(days=1)
+        if not settings.in_trip(tomorrow):
+            return
         try:
             await drive.create_day_folder(tomorrow)
             await notify(f"📁 Drive folder ready for Day "
@@ -113,9 +121,11 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
             await notify(f"⚠️ Couldn't create tomorrow's Drive folder: {exc}")
 
     async def daily_folder_link():
-        """6pm SF: send today's Drive folder link so the day's clips can go in
+        """6pm local: send today's Drive folder link so the day's clips can go in
         before the 22:30 build. The folder was created the night before at 22:00."""
         d = _today()
+        if not settings.in_trip(d):
+            return
         await notify(f"📁 Day {settings.day_number(d)} ({d.isoformat()}) — "
                      "today's Drive folder:" + await folder_link(d))
 
@@ -152,6 +162,21 @@ def build_scheduler(bot: Bot) -> AsyncIOScheduler:
                     shutil.rmtree(target, ignore_errors=True)
                     db.log_event(None, "pruned", str(target))
 
+    async def backup_db():
+        """Nightly consistent DB copy: 7 kept locally, every one also on Drive."""
+        bdir = settings.data_dir / "backups"
+        path = bdir / f"journal-{_today().isoformat()}.sqlite"
+        try:
+            db.backup_to(path)
+            for old in sorted(bdir.glob("journal-*.sqlite"))[:-7]:
+                old.unlink(missing_ok=True)
+            await drive.upload_backup(path)
+        except Exception as exc:
+            log.exception("db backup failed")
+            await notify(f"⚠️ Nightly DB backup failed: {exc}")
+
+    sched.add_job(backup_db, CronTrigger(hour=4, minute=0),
+                  id="backup_db", coalesce=True, misfire_grace_time=3600)
     sched.add_job(cleanup_old_days, CronTrigger(hour=3, minute=0),
                   id="cleanup_old_days", coalesce=True, misfire_grace_time=3600)
     sched.add_job(sync_poll, IntervalTrigger(minutes=settings.sync_interval_min),

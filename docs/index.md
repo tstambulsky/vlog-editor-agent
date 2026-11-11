@@ -2,8 +2,8 @@
 
 Daily video journal automation: phone clips in Google Drive → analyzed on the
 server → Claude writes a beat-synced story → script-review gate → ElevenLabs
-voiceover → ffmpeg render → Telegram approval → published to X and LinkedIn.
-Optionally bilingual (one language per platform). Runs on a Linux server with Docker.
+voiceover → ffmpeg render → Telegram approval → published via Zernio
+(X / English by default; bilingual + LinkedIn are opt-in). Runs on a Linux server with Docker.
 
 ## Architecture
 

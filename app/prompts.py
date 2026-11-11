@@ -11,13 +11,59 @@ from app import db
 from app.config import settings
 from app.schemas import CLIP_ANALYSIS_VERSION, ClipAnalysis, is_photo
 
-EDITORIAL_PATH = Path(__file__).resolve().parent.parent / "prompts" / "editorial.md"
-HUMANIZER_PATH = Path(__file__).resolve().parent.parent / "prompts" / "humanizer.md"
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+EDITORIAL_PATH = PROMPTS_DIR / "editorial.md"
+# Anti-AI-writing stack: humanizer + stop-slop are vendored open-source skills
+# (MIT); x-voice.md is this repo's own house rules and wins on conflicts.
+WRITING_DIR = PROMPTS_DIR / "writing"
+HUMANIZER_PATH = WRITING_DIR / "humanizer.md"
+STOP_SLOP_PATH = WRITING_DIR / "stop-slop.md"
+REFERENCE_VOICES_PATH = WRITING_DIR / "reference-voices.md"
+HOUSE_RULES_PATH = WRITING_DIR / "x-voice.md"
+
+
+def editorial() -> str:
+    """The series bible for THIS trip (place/days filled in) + the house writing
+    rules, so every drafting/revision prompt carries the same voice contract."""
+    bible = (EDITORIAL_PATH.read_text()
+             .replace("{{PLACE_LOWER}}", settings.trip_place.lower())
+             .replace("{{PLACE}}", settings.trip_place)
+             .replace("{{DAYS}}", str(settings.trip_days)))
+    return f"{bible}\n\n{HOUSE_RULES_PATH.read_text()}"
+
+
+def writing_rules() -> str:
+    """Full anti-slop reference for the humanize + review passes. The house
+    rules go LAST because they override the generic skills on conflicts. Any
+    reference file except the house rules is optional (skipped if missing)."""
+    parts = [("Humanizer skill", HUMANIZER_PATH), ("Stop-slop skill", STOP_SLOP_PATH),
+             ("Reference voices on X (measured)", REFERENCE_VOICES_PATH),
+             ("HOUSE RULES (override everything above)", HOUSE_RULES_PATH)]
+    return "\n\n".join(f"<<<<< {title} >>>>>\n{path.read_text()}"
+                       for title, path in parts
+                       if path.exists() or path == HOUSE_RULES_PATH)
+
+
+def tweet_first_line(d: date) -> str:
+    return f"day {settings.day_number(d)}/{settings.trip_days} in {settings.trip_place.lower()}"
+
+
+def _trip_context_section() -> str:
+    return settings.trip_context.strip() or "(no extra context about the trip)"
+
+
+def corrections_section(limit: int = 15) -> str:
+    """The founder's past corrections (script + tweet feedback, all days): the
+    best signal of what this drafting loop keeps getting wrong."""
+    rows = db.recent_corrections(limit)
+    if not rows:
+        return "(none yet)"
+    return "\n".join(f"- [{r['kind']}, {r['date']}] {r['text']}" for r in rows)
 
 def draft_schema_doc() -> str:
     es_edl = '"narration_es": "the same beat in natural Spanish", ' if settings.bilingual else ""
     es_fields = """
-  "caption_x_es": "Spanish X caption, <=280 chars",
+  "caption_x_es": "Spanish X caption, <=600 chars",
   "caption_linkedin_es": "Spanish LinkedIn caption",""" if settings.bilingual else ""
     hook_field = """
   "hook_candidates": [{"clip": "IMG_0231.MOV", "start_s": 6.0, "duration_s": 1.5,
@@ -28,7 +74,7 @@ def draft_schema_doc() -> str:
   "edl": [{"clip": "IMG_0231.MOV", "start_s": 4.0,
            "narration": "the exact English sentence(s) spoken WHILE this clip is on screen",
            """ + es_edl + """"why": "reason this clip fits these words"}],
-  "caption_x": "X caption, <=280 chars",
+  "caption_x": "X caption in the tweet format of the House rules (fixed first line), <=600 chars",
   "caption_linkedin": "LinkedIn caption",""" + es_fields + hook_field + """
   "confidence_notes": "anything you were unsure about (optional)"
 }"""
@@ -206,9 +252,16 @@ can't tell, say so in the field rather than guessing."""
 def build_draft_prompt(d: date, feedback: str | None = None,
                        previous_draft: dict | None = None) -> str:
     day_n = settings.day_number(d)
-    base = f"""{EDITORIAL_PATH.read_text()}
+    base = f"""{editorial()}
 
-# Today's task — Day {day_n}/30 ({d.isoformat()})
+# Today's task — Day {day_n}/{settings.trip_days} ({d.isoformat()})
+The tweet's first line today is exactly: `{tweet_first_line(d)}`
+
+## About this trip
+{_trip_context_section()}
+
+## The founder's past corrections (do NOT repeat these mistakes)
+{corrections_section()}
 
 Create today's draft. You are in the day's work folder. Each clip below comes
 with a pre-computed summary and key moments of what's in the footage — use those
@@ -285,32 +338,44 @@ word for word — unchanged fields let the system skip regenerating audio/video.
     return base
 
 
-def build_humanize_prompt(beats: list[str], caption_x: str,
-                          caption_linkedin: str) -> str:
-    """Second-pass prompt: run the vendored `humanizer` skill over the spoken
-    narration (one beat per EDL entry) and the two EN captions. The narration is
-    rewritten beat-by-beat — NOT flattened — so the EDL beat→clip mapping and the
-    beat-sync timing survive. cwd is the day's work folder (the skill's tool list
-    is irrelevant here; we hand it the text inline)."""
+def build_humanize_prompt(beats: list[str], caption_x: str, caption_linkedin: str,
+                          *, first_line: str, review_notes: str = "") -> str:
+    """Rewrite pass over the spoken narration (one beat per EDL entry) and the
+    captions, under the full anti-slop stack (humanizer + stop-slop + founder
+    voice + house rules). First pass: review_notes empty. Later passes carry the
+    reviewer's issues + the mechanical lint, and must fix exactly those.
+    The narration is rewritten beat-by-beat, NOT flattened, so the EDL
+    beat->clip mapping and the beat-sync timing survive."""
     n = len(beats)
     beats_json = json.dumps(beats, ensure_ascii=False, indent=1)
-    return f"""{HUMANIZER_PATH.read_text()}
+    notes = f"""
+## A reviewer scored the previous version below the bar. Fix EVERY issue listed:
+{review_notes}
+""" if review_notes else ""
+    return f"""{writing_rules()}
 
 ---
 # Now apply everything above to THIS travel-video copy
 
 You are given (a) the spoken NARRATION as an ordered list of beats and (b) two
-social CAPTIONS. Rewrite all of them to remove the AI-writing patterns described
-above, keeping the meaning, the facts, and the casual first-person founder voice.
+social CAPTIONS. Rewrite them to remove the AI-writing patterns described above,
+keeping the meaning, the facts, and the first-person founder voice. Follow the
+HOUSE RULES where they differ from the skills (narration = spoken rules, tweet =
+tweet rules). If a beat or caption is already clean, keep it word for word.
+{notes}
+## The founder's past corrections (these are rules too)
+{corrections_section()}
 
-HARD CONSTRAINTS (the video is already cut to these — breaking them breaks the render):
+HARD CONSTRAINTS (the video is already cut to these; breaking them breaks the render):
 - Return EXACTLY {n} narration beats, in the same order. Beat i must still cover
-  the same moment as input beat i — never merge, split, drop, or reorder beats.
+  the same moment as input beat i: never merge, split, drop, or reorder beats.
 - Keep each beat within ±15% of its original word count: each clip stays on
   screen for exactly as long as its beat is spoken, so length changes desync the cut.
-- caption_x must stay ≤ 280 characters.
-- Preserve every proper noun, event name, @handle and #hashtag VERBATIM — do not
-  invent, translate, or drop names, places, or facts. These are English; do not translate.
+- caption_x must stay ≤ 600 characters, start with the exact line
+  `{first_line}`, and follow the House rules tweet format (case, emoji and
+  ending rules included). Keep every @handle verbatim, including its case.
+- Preserve every proper noun, event name and @handle; do not invent, translate,
+  or drop names, places, or facts. These are English; do not translate.
 
 Narration beats (JSON list, {n} items):
 {beats_json}
@@ -326,6 +391,44 @@ Reply with ONLY this JSON, no other text:
 """
 
 
+def build_review_prompt(narration: str, caption_x: str, *, lint: list[str]) -> str:
+    """Independent reviewer: SCORES the copy on the house rubric, never rewrites.
+    Kept separate from the writer so the pass that wrote the text isn't the one
+    grading it. `lint` = mechanical findings the code already detected."""
+    lint_txt = "\n".join(f"- {x}" for x in lint) or "- (none)"
+    return f"""{writing_rules()}
+
+---
+# Review task: score, don't rewrite
+
+You are a strict editor reviewing a founder's daily video journal before it goes
+out. Score the NARRATION (spoken; judge it with the narration rules) and the
+TWEET (judge it with the tweet rules) separately on the House rules rubric:
+directness, rhythm, trust, authenticity, density, 1-10 each, total out of 50.
+Apply the automatic caps. Be hard to impress: 45+ means a reader could not tell
+an AI touched it.
+
+For every point you took off, add one issue: quote the exact offending words and
+say what to do instead, prefixed with "narration:" or "tweet:". No issue for
+things that are fine.
+
+The founder's past corrections also count as rules:
+{corrections_section()}
+
+Mechanical problems the system already found (each one must appear in issues):
+{lint_txt}
+
+NARRATION:
+{narration}
+
+TWEET:
+{caption_x}
+
+Reply with ONLY this JSON, no other text:
+{{"narration_score": 0, "tweet_score": 0, "issues": ["narration: \\"...\\" -> ...", "tweet: \\"...\\" -> ..."]}}
+"""
+
+
 def build_caption_trim_prompt(script: str) -> str:
     return f"""This voiceover script is too long to fit in 60 seconds when spoken.
 Shorten it to 100-115 words, keeping the hook, the story, and the reflection.
@@ -333,4 +436,44 @@ Reply with ONLY this JSON: {{"voiceover_script": "..."}}
 
 Script:
 {script}
+"""
+
+
+def build_tweet_revision_prompt(current_tweet: str, feedback: str, *,
+                                theme: str, script: str, first_line: str) -> str:
+    """Rewrite ONLY the X caption (the tweet) per the founder's feedback, in the
+    series voice. Does not touch the spoken script or the video; the caption is
+    applied at publish time. Used by the script-review tweet editor."""
+    return f"""{editorial()}
+
+---
+# Revise ONLY the X caption (the tweet)
+
+You already wrote the tweet below for today's video. Rewrite it to address the
+founder's feedback, in the tweet format and voice of the House rules above.
+This does NOT touch the video or the spoken script, only the tweet.
+
+HARD CONSTRAINTS:
+- Start with the exact line `{first_line}`, then the body in the House rules
+  tweet format. ≤ 600 characters.
+- The founder's feedback wins over the format rules when they conflict.
+- Stay truthful to the video: don't invent facts, places, people, or events that
+  aren't in the theme/script. Keep any @handles verbatim.
+
+The founder's past corrections (rules too):
+{corrections_section()}
+
+Today's theme: {theme}
+
+The spoken script (context only, do NOT just repeat it):
+{script}
+
+Current tweet:
+{current_tweet}
+
+Founder's feedback on the tweet:
+{feedback}
+
+Reply with ONLY this JSON, no other text:
+{{"caption_x": "the rewritten tweet"}}
 """

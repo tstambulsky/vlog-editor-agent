@@ -21,7 +21,7 @@ from app.config import settings
 _HANDLE_RE = re.compile(r"@?([A-Za-z0-9_]{1,15})")
 
 _LEAD = {
-    "en": "Shoutout to",
+    "en": "shoutout to",
     "es": "Shoutout a",
 }
 
@@ -66,7 +66,7 @@ def set_handles(d: date, handles: list[str]) -> None:
 
 def shoutout_line(handles: list[str], lang: str = "en") -> str:
     """Render the shoutout sentence, e.g.
-    'Shoutout to the friends who showed me so much of SF today: @a and @b.'
+    'Shoutout to the friends who showed me so much of the city today: @a and @b.'
     Returns '' for no handles."""
     if not handles:
         return ""

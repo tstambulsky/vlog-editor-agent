@@ -55,6 +55,14 @@ async def sync_day(d: date) -> list[str]:
                    if p.suffix.lower() in MEDIA_EXTS} - before)
 
 
+async def upload_backup(path: Path) -> None:
+    """Copy a DB backup to <drive_remote>/_backups/ (off-box copy of the state:
+    a server wipe or disk cleanup otherwise loses every day's state, since the
+    DB only lives in ./data)."""
+    await _rclone("copyto", str(path), f"{settings.drive_remote}/_backups/{path.name}",
+                  timeout=600)
+
+
 async def create_day_folder(d: date) -> None:
     await _rclone("mkdir", _remote_day(d), timeout=120)
 

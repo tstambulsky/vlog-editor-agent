@@ -31,6 +31,13 @@ class Settings(BaseSettings):
 
     drive_remote: str = "gdrive:VideoJournal"
 
+    # The trip is configuration, not code: one series per trip, same bot/repo.
+    # trip_place/trip_days fill the series bible + the "Day N/M" labels;
+    # trip_context is free text (what the trip IS: an event, a workshop, who's
+    # hosting) handed to the drafting agent. Keep private details in .env only.
+    trip_place: str = "San Francisco"
+    trip_days: int = 30
+    trip_context: str = ""
     trip_start_date: date = date(2026, 6, 15)
     timezone: str = "America/Los_Angeles"
     pipeline_hour: int = 22
@@ -54,10 +61,19 @@ class Settings(BaseSettings):
     script_review: bool = True
 
     # True = after drafting, run a second reasoning pass (the `humanizer` skill,
-    # vendored to prompts/humanizer.md) that rewrites the spoken narration + the
+    # vendored to prompts/writing/) that rewrites the spoken narration + the
     # X/LinkedIn captions to strip AI-writing patterns. Fresh drafts only — never
     # re-writes the founder's explicit revision wording. EN fields only.
     humanize: bool = True
+    # After the humanizer, an independent reviewer scores narration + tweet on the
+    # house rubric (/50). Below review_min_score -> rewrite with the reviewer's
+    # issues, up to review_rounds times; the best-scoring version is kept.
+    # review_rounds=0 disables the reviewer (humanizer only).
+    review_rounds: int = 2
+    review_min_score: int = 45
+    # House style: the tweet body is all lowercase. True = the mechanical lint
+    # flags any uppercase word outside acronyms/@handles (and caps the review score).
+    tweet_lowercase: bool = False
 
     # True = the agent proposes 1-2s "hook" cold-opens (the most attention-
     # grabbing moment across the clips); the founder picks one in the script-
@@ -113,6 +129,19 @@ class Settings(BaseSettings):
 
     def day_number(self, d: date) -> int:
         return (d - self.trip_start_date).days + 1
+
+    def in_trip(self, d: date) -> bool:
+        """True for days 1..trip_days. Scheduled jobs stay silent outside this
+        window (otherwise pre-trip days ping as 'Day -2', post-trip as 'Day 9/8')."""
+        return 1 <= self.day_number(d) <= self.trip_days
+
+    def day_label(self, d: date) -> str:
+        """'Day 3/8' — the series counter shown in Telegram, the dashboard, prompts."""
+        return f"Day {self.day_number(d)}/{self.trip_days}"
+
+    @property
+    def series_name(self) -> str:
+        return f"{self.trip_place} journal"
 
     def day_dir(self, d: date) -> Path:
         return self.data_dir / "days" / d.isoformat()

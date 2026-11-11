@@ -18,7 +18,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import (BotCommand, CallbackQuery, FSInputFile,
                            InlineKeyboardButton, InlineKeyboardMarkup, Message)
 
-from app import db, hook, pipeline, publishing, shoutout, signature
+from app import clockfix, db, hook, pipeline, publishing, shoutout, signature
 from app.config import settings
 from app.schemas import Draft
 from app.services import analyze, drive, render as render_svc
@@ -82,7 +82,7 @@ async def send_draft_preview(bot: Bot, d: date) -> None:
 
     await bot.send_video(
         settings.telegram_user_id, FSInputFile(preview),
-        caption=f"🎬 Draft 🇺🇸 — Day {day['day_number']}/30 (v{row['version']})",
+        caption=f"🎬 Day {day['day_number']}/{settings.trip_days} (v{row['version']})",
         width=1080, height=1920,
     )
     es_preview = row["es_preview_path"] or row["es_video_path"]
@@ -112,14 +112,8 @@ async def send_draft_preview(bot: Bot, d: date) -> None:
     # Every interpolated field below is LLM/user-authored free text — escape it
     # or a stray '<' (e.g. in a caption) makes Telegram reject the whole message.
     text = (
-        f"<b>Day {day['day_number']}/30 — v{row['version']}</b>\n\n"
-        f"<b>Theme:</b> {html.escape(draft['theme'])}\n\n"
-        f"<b>Voiceover (EN):</b>\n{html.escape(draft['voiceover_script'])}\n\n"
-        f"<b>X caption (EN):</b>\n{html.escape(draft['caption_x'])}\n\n"
-        + shout_block
-        + es_block
-        + f"<b>LinkedIn caption:</b>\n{html.escape(draft['caption_linkedin'])}\n\n"
-        + sig_block
+        f"<b>Day {day['day_number']}/{settings.trip_days} — v{row['version']}</b>\n\n"
+        f"<b>🐦 Tweet (X) — what will post:</b>\n{html.escape(_tweet_preview(d, draft))}\n"
         + (f"\n⚠️ <i>{html.escape(notes)}</i>\n" if notes else "")
         + "\n✍️ Reply with text or a voice note to request changes."
     )
@@ -148,6 +142,24 @@ def _clip_times(d: date) -> dict[str, str]:
         hhmm = local[11:16] if len(local) >= 16 else ""
         times[c["filename"]] = hhmm
     return times
+
+
+def _clockfix_block(d: date, times: dict[str, str]) -> str:
+    """A ⚠️ block listing clips auto-flagged with a wrong camera clock (the
+    Ray-Ban glasses sometimes stamp a wrong DATE), so the founder can fix the
+    order with /retime. Empty string when nothing's suspect."""
+    suspects = [f for f in clockfix.get_suspects(d) if f in times]
+    if not suspects:
+        return ""
+    lines = ["\n⚠️ <b>Off camera clock — order may be wrong:</b>"]
+    for f in suspects:
+        when = times.get(f, "") or "?"
+        lines.append(f"• {html.escape(f)} · now {when}")
+    example = suspects[0]
+    lines.append(
+        f"Fix with <code>/retime {html.escape(example)} HH:MM</code> "
+        "(repeat &lt;clip&gt; &lt;HH:MM&gt; for more).")
+    return "\n".join(lines) + "\n"
 
 
 def _beats_block(draft: dict, times: dict[str, str]) -> str:
@@ -243,11 +255,15 @@ async def send_script_review(bot: Bot, d: date) -> None:
     draft = json.loads(row["draft_json"])
     times = _clip_times(d)
     text = (
-        f"<b>📝 Script review — Day {day['day_number']}/30 (v{row['version']})</b>\n"
-        f"<b>Theme:</b> {html.escape(draft['theme'])}\n\n"
+        f"<b>📝 Script review — Day {day['day_number']}/{settings.trip_days} (v{row['version']})</b>\n"
+        f"<b>Theme:</b> {html.escape(draft['theme'])}\n"
+        + (f"<b>No-slop:</b> {html.escape(draft['quality'])}\n" if draft.get("quality") else "")
+        + "\n"
         + _beats_block(draft, times)
-        + "\n\nReview the script. Reply with text to revise it (no render yet), "
-        "or tap ✅ to build the voiceover + video."
+        + f"\n\n<b>🐦 Tweet (X) — what will post:</b>\n{html.escape(_tweet_preview(d, draft))}\n"
+        + _clockfix_block(d, times)
+        + "\n✏️ <b>Edit tweet</b> = rewrite just the tweet (no render). "
+        "Reply with text = revise the SCRIPT. ✅ = build the video."
     )
     await bot.send_message(settings.telegram_user_id, text[:4000],
                            reply_markup=_review_kb(d), parse_mode="HTML")
@@ -318,7 +334,8 @@ _MENU_TEXT = (
     "🛠 /makeit — build today's draft now\n"
     "🔄 /redo — re-draft from scratch\n"
     "✍️ /note &lt;text&gt; — add context (or just send text / a voice note)\n"
-    "📣 /shoutout &lt;@a @b&gt; — mention X handles in today's X post"
+    "📣 /shoutout &lt;@a @b&gt; — mention X handles in today's X post\n"
+    "🕑 /retime &lt;clip&gt; &lt;HH:MM&gt; — fix a clip's wrong capture time"
 )
 
 # Native Telegram command list (the menu button + "/" autocomplete).
@@ -332,6 +349,7 @@ BOT_COMMANDS = [
     BotCommand(command="redo", description="Re-draft from scratch"),
     BotCommand(command="note", description="Add context for today"),
     BotCommand(command="shoutout", description="Mention X handles in today's X post"),
+    BotCommand(command="retime", description="Fix a clip's wrong capture time"),
 ]
 
 
@@ -355,7 +373,7 @@ def _status_text(d: date) -> str:
     raw = settings.day_dir(d) / "raw"
     n_raw = len(list(raw.glob("*"))) if raw.exists() else 0
     posts = db.get_posts(d)
-    lines = [f"📊 Day {day['day_number']}/30 ({d}) — <b>{day['status']}</b>",
+    lines = [f"📊 Day {day['day_number']}/{settings.trip_days} ({d}) — <b>{day['status']}</b>",
              f"Clips: {max(len(clips), n_raw)} synced"]
     for p in posts:
         lines.append(f"{p['platform']}: {p['status']}"
@@ -378,16 +396,16 @@ def _context_text(d: date) -> str:
             items.append(f"<b>{hhmm}</b> — {html.escape(txt)}")
     n = settings.day_number(d)
     if not items:
-        return (f"📝 Day {n}/30 ({d}) — no context yet today.\n"
+        return (f"📝 Day {n}/{settings.trip_days} ({d}) — no context yet today.\n"
                 "Send a voice note or text, or /note &lt;something&gt;.")
-    return (f"📝 Day {n}/30 ({d}) — context so far ({len(items)}):\n\n"
+    return (f"📝 Day {n}/{settings.trip_days} ({d}) — context so far ({len(items)}):\n\n"
             + "\n\n".join(items))
 
 
 async def _folder_text(d: date) -> str:
     try:
         link = await drive.day_folder_link(d)
-        return f"📁 Day {settings.day_number(d)}/30 ({d}) Drive folder:\n{link}"
+        return f"📁 {settings.day_label(d)} ({d}) Drive folder:\n{link}"
     except Exception:
         return ("📁 Couldn't fetch the Drive folder link right now "
                 "(the folder may not exist yet). Try again shortly.")
@@ -396,7 +414,7 @@ async def _folder_text(d: date) -> str:
 @router.message(Command("start"))
 async def cmd_start(message: Message):
     await message.answer(
-        "👋 SF journal bot ready. /menu for everything.\n"
+        f"👋 {settings.series_name} bot ready. /menu for everything.\n"
         "Send clips right here (as a file for full quality) or to the Drive "
         f"folder; I'll handle the rest at "
         f"{settings.pipeline_hour:02d}:{settings.pipeline_minute:02d}."
@@ -485,12 +503,97 @@ async def cmd_shoutout(message: Message, command: CommandObject):
         return
     handles = shoutout.parse_handles(arg)
     if not handles:
-        await message.answer("🤷 No valid X handles found. Try /shoutout @abed_hamami @ionpetropoulos")
+        await message.answer("🤷 No valid X handles found. Try /shoutout @alice_dev @bob_builds")
         return
     shoutout.set_handles(d, handles)
     await message.answer(
         "📣 Shoutout set — it'll be added to today's X post:\n"
         f"{shoutout.shoutout_line(handles, 'en')}")
+
+
+_RETIME_USAGE = (
+    "Usage: /retime &lt;clip&gt; &lt;HH:MM&gt; [&lt;clip&gt; &lt;HH:MM&gt; …]\n"
+    "e.g. /retime video-584 15:30 video-641 16:00\n"
+    "Fixes the capture time of clips whose camera clock was off so they "
+    "re-sort into the real chronological order."
+)
+
+
+def _parse_retime_pairs(arg: str) -> list[tuple[str, int, int]]:
+    """Parse '<clipsubstring> <HH:MM>' pairs into (substring, hh, mm). Raises
+    ValueError on an odd token count or a malformed HH:MM. Structured parsing —
+    not an intent classifier."""
+    toks = arg.split()
+    if not toks or len(toks) % 2 != 0:
+        raise ValueError("expected <clip> <HH:MM> pairs")
+    pairs = []
+    for i in range(0, len(toks), 2):
+        sub, hhmm = toks[i], toks[i + 1]
+        if ":" not in hhmm:
+            raise ValueError(f"bad time '{hhmm}'")
+        h_s, m_s = hhmm.split(":", 1)
+        try:
+            hh, mm = int(h_s), int(m_s)
+        except ValueError:
+            raise ValueError(f"bad time '{hhmm}'")
+        if not (0 <= hh < 24 and 0 <= mm < 60):
+            raise ValueError(f"bad time '{hhmm}'")
+        pairs.append((sub, hh, mm))
+    return pairs
+
+
+def _resolve_clip(d: date, substring: str) -> str:
+    """Resolve a clip by case-insensitive substring against the day's filenames.
+    Raises ValueError on 0 or >1 matches so the caller can report it."""
+    sub = substring.lower()
+    matches = [c["filename"] for c in db.get_clips(d)
+               if sub in c["filename"].lower()]
+    if not matches:
+        raise ValueError(f"no clip matches '{substring}'")
+    if len(matches) > 1:
+        raise ValueError(f"'{substring}' matches {len(matches)} clips: "
+                         + ", ".join(matches))
+    return matches[0]
+
+
+@router.message(Command("retime"))
+async def cmd_retime(message: Message, command: CommandObject, bot: Bot):
+    """Fix the capture time of clips whose camera clock was wrong (the Ray-Ban
+    glasses sometimes stamp a wrong DATE, scrambling chronological order). Each
+    `<clip> <HH:MM>` pins that clip to today's HH:MM; then the script is re-drafted
+    so the EDL re-sorts into the real order. Only acts on today's draft."""
+    d = _today()
+    if not db.get_draft(d):
+        await message.answer("No draft for today yet — build it first with /makeit, "
+                             "then /retime to fix any wrong capture times.")
+        return
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer(_RETIME_USAGE, parse_mode="HTML")
+        return
+    try:
+        pairs = _parse_retime_pairs(arg)
+        resolved = [(_resolve_clip(d, sub), hh, mm) for sub, hh, mm in pairs]
+    except ValueError as exc:
+        await message.answer(f"🤷 {exc}\n\n{_RETIME_USAGE}", parse_mode="HTML")
+        return
+
+    applied = []
+    for filename, hh, mm in resolved:
+        iso = clockfix.local_for_day(d, hh, mm)
+        clockfix.set_override(d, filename, iso)
+        clockfix.remove_suspect(d, filename)
+        db.update_clip_time(d, filename, iso, iso, clockfix.epoch_of(iso))
+        applied.append(f"{html.escape(filename)} → {hh:02d}:{mm:02d}")
+    db.log_event(d, "retime", "; ".join(f"{f}@{h:02d}:{m:02d}"
+                                        for f, h, m in resolved))
+    await message.answer("🕑 New capture times:\n" + "\n".join(applied),
+                         parse_mode="HTML")
+    asyncio.create_task(_run_heavy(
+        bot, _revise_script_and_review(
+            bot, d, "Capture times were corrected; re-sort to the real "
+            "chronological order."),
+        "🕑 Re-timing clips…"))
 
 
 # ---------- free text & voice ----------
@@ -624,7 +727,7 @@ async def _ingest(message: Message, bot: Bot, tg_file, name: str, kind: str) -> 
     # ready before the build; non-blocking, runs concurrently with idle time and
     # never touches the single _busy build slot.
     asyncio.create_task(pipeline.safe_eager_sweep(d))
-    text = (f"📥 Saved <b>{dest.name}</b> to Day {settings.day_number(d)}/30 "
+    text = (f"📥 Saved <b>{dest.name}</b> to {settings.day_label(d)} "
             f"({d:%a %b %d}) — {n} clip(s) so far.")
     if kind == "video":
         text += "\n💡 Tip: send as a <i>file</i> (not “video”) to keep full 4K/HDR quality."
@@ -677,7 +780,7 @@ async def on_move_clip(query: CallbackQuery, bot: Bot):
     db.log_event(dst_day, "upload_moved", f"{name} from {src_day}")
     await query.answer(f"Moved to {dst_day}")
     await query.message.edit_text(
-        f"📥 Moved <b>{name}</b> → Day {settings.day_number(dst_day)}/30 "
+        f"📥 Moved <b>{name}</b> → {settings.day_label(dst_day)} "
         f"({dst_day:%a %b %d}) — {n} clip(s).", parse_mode="HTML")
 
 

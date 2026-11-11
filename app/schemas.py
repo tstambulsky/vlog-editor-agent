@@ -77,6 +77,9 @@ class Draft(BaseModel):
     # Proposed cold-open hooks (the founder picks one; default = the first).
     # Default empty so drafts saved before this field still validate.
     hook_candidates: list[HookCandidate] = Field(default_factory=list, max_length=4)
+    # Set by the code's review pass (never by the drafting agent): e.g.
+    # "narration 46/50 · tweet 47/50". Empty on revisions / when review is off.
+    quality: str = ""
 
     @computed_field
     @property
@@ -105,8 +108,23 @@ class HumanizedText(BaseModel):
     narrations: list[str] = Field(
         min_length=1,
         description="rewritten narration, one string per EDL beat, same order")
-    caption_x: str = Field(max_length=280)
+    caption_x: str = Field(max_length=600)
     caption_linkedin: str
+
+
+class SlopReview(BaseModel):
+    """Reply of the independent reviewer pass: house-rubric scores (out of 50)
+    for the narration and the tweet, plus concrete issues to fix."""
+    narration_score: int = Field(ge=0, le=50)
+    tweet_score: int = Field(ge=0, le=50)
+    issues: list[str] = Field(default_factory=list)
+
+
+class TweetReply(BaseModel):
+    """Reply of a tweet-only revision: the X caption rewritten per the founder's
+    feedback. Applied back onto the Draft's caption_x in pipeline.revise_tweet —
+    nothing else changes (no script/EDL/render touch)."""
+    caption_x: str = Field(max_length=600)
 
 
 def sort_edl_chronologically(

@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS posts (
     published_url TEXT,
     error TEXT
 );
+CREATE TABLE IF NOT EXISTS corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT,
@@ -160,6 +167,17 @@ def upsert_clip(d: date, filename: str, duration_s: float, created_ts: str,
     )
 
 
+def update_clip_time(d: date, filename: str, created_ts: str,
+                     created_local: str, created_epoch: float) -> None:
+    """Overwrite a clip's capture time (raw + normalized sort keys). Used by
+    `/retime` to fix a wrong-camera-clock clip's place in the chronology."""
+    _exec(
+        """UPDATE clips SET created_ts=?, created_local=?, created_epoch=?
+           WHERE date=? AND filename=?""",
+        (created_ts, created_local, created_epoch, d.isoformat(), filename),
+    )
+
+
 def get_clips(d: date) -> list[sqlite3.Row]:
     # Order by the tz-normalized epoch (true capture order); fall back to the raw
     # ts for any legacy row that predates normalization (epoch defaults to 0).
@@ -252,6 +270,31 @@ def get_posts(d: date) -> list[sqlite3.Row]:
 def get_events(d: date) -> list[sqlite3.Row]:
     return _exec("SELECT * FROM events WHERE date=? ORDER BY ts",
                  (d.isoformat(),)).fetchall()
+
+
+def add_correction(d: date, kind: str, text: str) -> None:
+    """The founder's own feedback ('script' | 'tweet' | 'video'), kept in its own
+    table so it survives draft churn and feeds every future drafting prompt."""
+    text = (text or "").strip()
+    if text:
+        _exec("INSERT INTO corrections(date, ts, kind, text) VALUES (?, ?, ?, ?)",
+              (d.isoformat(), _now(), kind, text))
+
+
+def recent_corrections(limit: int = 15) -> list[sqlite3.Row]:
+    rows = _exec("SELECT date, kind, text FROM corrections ORDER BY id DESC LIMIT ?",
+                 (limit,)).fetchall()
+    return list(reversed(rows))
+
+
+def backup_to(path: Path) -> None:
+    """Consistent online copy of the SQLite DB (safe while the bot is writing)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dst = sqlite3.connect(path)
+    try:
+        connect().backup(dst)
+    finally:
+        dst.close()
 
 
 def log_event(d: date | None, kind: str, detail: str = "") -> None:

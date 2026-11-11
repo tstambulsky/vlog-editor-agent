@@ -9,15 +9,16 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app import db, hook as hooks, prompts
+from app import clockfix, db, hook as hooks, prompts, slop
 from app.claude_cli import run_structured
 from app.notify import notify
 from app.config import settings
 from app.schemas import (CLIP_ANALYSIS_VERSION, MAX_SCRIPT_WORDS,
                          MIN_SCRIPT_WORDS, PHOTO_EXTS, ClipAnalysis,
-                         ClipAnalysisReply, Draft, HumanizedText, is_photo,
-                         sort_edl_chronologically, valid_hook_candidates,
-                         validate_edl_against_clips)
+                         ClipAnalysisReply, Draft, HumanizedText, SlopReview,
+                         TweetReply,
+                         is_photo, sort_edl_chronologically,
+                         valid_hook_candidates, validate_edl_against_clips)
 from app.services import align, analyze, drive, render as render_svc, voiceover
 from app.services.analyze import ClipMeta
 from app.services.subtitles import write_ass
@@ -145,6 +146,10 @@ async def ensure_clip_processed(d: date, clip: Path) -> ClipMeta | None:
         db.log_event(d, "clip_quarantined", f"{clip.name}: {exc}")
         return None
     t_path = dirs["transcripts"] / f"{Path(meta.filename).stem}.json"
+    # Correct/pin the capture time for clips with a wrong camera clock (Ray-Ban
+    # glasses stamp the wrong DATE) so the stored sort keys are the real ones.
+    # Sticky: re-applied from the sidecar even though the raw probe stays wrong.
+    meta = clockfix.apply(d, meta)
     db.upsert_clip(d, meta.filename, meta.duration_s, meta.created_ts,
                    meta.hdr, str(t_path),
                    created_local=meta.created_local,
@@ -209,6 +214,7 @@ async def stage_draft(d: date, feedback: str | None = None) -> tuple[Draft, int]
     version = (day["current_version"] or 0) + 1
     previous = None
     if feedback:
+        db.add_correction(d, "script", feedback)
         row = db.get_draft(d)
         previous = json.loads(row["draft_json"]) if row else None
     clip_durations = {c["filename"]: c["duration_s"] for c in db.get_clips(d)}
@@ -249,7 +255,7 @@ async def stage_draft(d: date, feedback: str | None = None) -> tuple[Draft, int]
     # overwrite the founder's explicit wording (and so apply_feedback's
     # unchanged-field re-render skip still works).
     if settings.humanize and not feedback:
-        draft = await stage_humanize(d, draft)
+        draft = await stage_polish(d, draft)
 
     # Keep only hook candidates the renderer can honor (existing video clip with
     # enough footage), and reset any prior pick so this draft re-offers from its
@@ -265,7 +271,7 @@ async def stage_draft(d: date, feedback: str | None = None) -> tuple[Draft, int]
     return draft, version
 
 
-async def stage_humanize(d: date, draft: Draft) -> Draft:
+async def stage_humanize(d: date, draft: Draft, review_notes: str = "") -> Draft:
     """Second reasoning pass (the vendored `humanizer` skill): rewrite the spoken
     narration + the X/LinkedIn captions to strip AI-writing patterns. Rewrites
     each EDL beat IN PLACE (same count/order), so the beat→clip mapping and
@@ -274,8 +280,9 @@ async def stage_humanize(d: date, draft: Draft) -> Draft:
     unchanged rather than blocking the build."""
     beats = [e.narration for e in draft.edl]
     n = len(beats)
-    prompt = prompts.build_humanize_prompt(beats, draft.caption_x,
-                                           draft.caption_linkedin)
+    prompt = prompts.build_humanize_prompt(
+        beats, draft.caption_x, draft.caption_linkedin,
+        first_line=prompts.tweet_first_line(d), review_notes=review_notes)
 
     def _validate(h: HumanizedText) -> list[str]:
         errors = []
@@ -306,6 +313,61 @@ async def stage_humanize(d: date, draft: Draft) -> Draft:
         "caption_x": h.caption_x.strip(),
         "caption_linkedin": h.caption_linkedin.strip(),
     })
+
+
+def _lint(d: date, draft: Draft) -> list[str]:
+    return (slop.lint_narration(draft.voiceover_script)
+            + slop.lint_tweet(draft.caption_x, prompts.tweet_first_line(d),
+                             lowercase=settings.tweet_lowercase))
+
+
+async def stage_review(d: date, draft: Draft) -> tuple[SlopReview, list[str]]:
+    """Independent reviewer call: scores, never rewrites. Mechanical lint
+    findings cap the score (a piece with a dash or an emoji can't pass)."""
+    lint = _lint(d, draft)
+    review = await run_structured(
+        prompts.build_review_prompt(draft.voiceover_script, draft.caption_x, lint=lint),
+        cwd=day_dirs(d)["work"], schema=SlopReview)
+    cap = settings.review_min_score - 1
+    narr_lint = any(x.startswith("narration:") for x in lint)
+    tweet_lint = any(x.startswith("tweet:") for x in lint)
+    review = review.model_copy(update={
+        "narration_score": min(review.narration_score, cap) if narr_lint else review.narration_score,
+        "tweet_score": min(review.tweet_score, cap) if tweet_lint else review.tweet_score,
+        "issues": list(dict.fromkeys(lint + review.issues)),
+    })
+    return review, lint
+
+
+async def stage_polish(d: date, draft: Draft) -> Draft:
+    """humanize -> review -> (rewrite with the reviewer's issues -> review)
+    while below review_min_score, at most review_rounds rewrites. Keeps the
+    best-scoring version (a rewrite can make things worse). Best-effort: any
+    reviewer failure returns the best version so far."""
+    draft = await stage_humanize(d, draft)
+    if settings.review_rounds <= 0:
+        return draft
+    best, best_score, quality = draft, -1, ""
+    current = draft
+    for attempt in range(settings.review_rounds + 1):
+        try:
+            review, _ = await stage_review(d, current)
+        except Exception:
+            log.exception("review pass failed — keeping the best version so far")
+            db.log_event(d, "review_failed", f"attempt {attempt}")
+            break
+        score = min(review.narration_score, review.tweet_score)
+        db.log_event(d, "review", f"attempt {attempt}: narration {review.narration_score}"
+                     f"/50, tweet {review.tweet_score}/50; " + " | ".join(review.issues)[:1500])
+        if score > best_score:
+            best, best_score = current, score
+            quality = (f"narration {review.narration_score}/50 · "
+                       f"tweet {review.tweet_score}/50")
+        if score >= settings.review_min_score or attempt == settings.review_rounds:
+            break
+        current = await stage_humanize(
+            d, current, review_notes="\n".join(f"- {i}" for i in review.issues))
+    return best.model_copy(update={"quality": quality})
 
 
 async def stage_voiceover(d: date, version: int, script: str,
@@ -408,7 +470,7 @@ async def run_pipeline(
     Idempotent stages."""
     async with _pipeline_lock:
         day_n = settings.day_number(d)
-        await notify(f"🤖 Agent started — building Day {day_n}/30")
+        await notify(f"🤖 Agent started — building Day {day_n}/{settings.trip_days}")
         await stage_sync(d)
         metas = await stage_analyze(d)
         if not metas:
@@ -455,7 +517,7 @@ async def render_phase(d: date) -> tuple[Draft, int, render_svc.RenderResult]:
         draft = Draft.model_validate_json(row["draft_json"])
         version = row["version"]
         await notify(f"✅ Script approved — generating the voiceover + render for "
-                     f"Day {settings.day_number(d)}/30…")
+                     f"{settings.day_label(d)}…")
         result = await _render_all(d, draft, version)
         return draft, version, result
 
@@ -487,6 +549,30 @@ async def revise_script(d: date, feedback: str) -> tuple[Draft, int, list[str]]:
         ]
         db.set_status(d, "script_review")  # stage_draft set it to 'drafted'
         return draft, version, changed
+
+
+async def revise_tweet(d: date, feedback: str) -> str:
+    """Tweet-only revision: rewrite the X caption (`caption_x`) per the founder's
+    feedback via the reasoning layer, in place on the current draft. Touches
+    NOTHING else — no script, EDL, voiceover, or render (the caption is applied at
+    publish time). Works at the script-review gate (before render) and at the
+    post-render preview. Returns the new tweet."""
+    async with _pipeline_lock:
+        row = db.get_draft(d)
+        if not row:
+            raise PipelineError("No draft exists yet for this day")
+        draft = json.loads(row["draft_json"])
+        await notify("✏️ Rewriting the tweet…")
+        db.add_correction(d, "tweet", feedback)
+        prompt = prompts.build_tweet_revision_prompt(
+            draft.get("caption_x", ""), feedback,
+            theme=draft.get("theme", ""), script=draft.get("voiceover_script", ""),
+            first_line=prompts.tweet_first_line(d))
+        reply = await run_structured(prompt, cwd=day_dirs(d)["work"], schema=TweetReply)
+        draft["caption_x"] = reply.caption_x
+        db.save_draft(d, row["version"], draft, trigger="tweet_edit")
+        db.log_event(d, "tweet_edit", reply.caption_x[:200])
+        return reply.caption_x
 
 
 async def apply_feedback(d: date, feedback: str) -> tuple[Draft, int, render_svc.RenderResult, list[str]]:
